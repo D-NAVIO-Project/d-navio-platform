@@ -110,6 +110,8 @@ Please read `CONTRIBUTING.md` for the expected workflow.
 ## Authors
 
 - Michael Kontoulis
+- George Doukas
+- George Nanos
 - Sofianos Lampropoulos
 
 ## License
