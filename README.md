@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/PrimaryLogo.png" alt="D-NAVIO logo" width="320" />
+</p>
+
 # D-NAVIO 
 
 REPO-TYPE
@@ -85,6 +89,8 @@ docker compose -f docker/docker-compose.dev.yml down
 
 ```text
 d-navio/
+├── assets/
+│   └── PrimaryLogo.png
 ├── CONTRIBUTING.md
 ├── README.md
 ├── docker/
