@@ -1,6 +1,8 @@
 services:
   kafka:
     image: confluentinc/cp-kafka:7.8.3
+    # Keep Kafka on amd64 for local compatibility; the current arm64 image variant is broken on Docker Desktop.
+    platform: linux/amd64
     container_name: dnavio-kafka
     hostname: kafka
     ports:

@@ -31,6 +31,9 @@ cd d-navio
 docker compose -f docker/docker-compose.dev.yml up -d
 ```
 
+Note: the local dev compose file pins Kafka to `linux/amd64` for compatibility
+on Apple Silicon Docker Desktop setups.
+
 ## Verify Running Containers
 
 ```bash
@@ -85,6 +88,61 @@ Default development credentials:
 username: admin
 password: adminadmin
 ```
+
+
+## Validation
+
+After starting the stack, verify the following services.
+
+### Keycloak Validation
+
+Open:
+
+```text
+http://localhost:8080
+```
+
+Log in with:
+
+```text
+username: admin
+password: adminadmin
+```
+
+### MinIO Validation
+
+Open:
+
+```text
+http://localhost:9001
+```
+
+Log in with:
+
+```text
+username: admin
+password: adminadmin
+```
+
+### Kafka Validation
+
+Kafka does not expose a web UI in this setup.
+Validate Kafka using the CLI tools inside the container.
+
+Create a test topic:
+
+```bash
+docker exec -it dnavio-kafka sh -lc 'kafka-topics --bootstrap-server kafka:9092 --create --topic test-topic --partitions 1 --replication-factor 1'
+```
+
+List topics:
+
+```bash
+docker exec -it dnavio-kafka sh -lc 'kafka-topics --bootstrap-server kafka:9092 --list'
+```
+
+If `test-topic` appears in the output, Kafka is working correctly.
+
 
 ## Stop Stack
 
