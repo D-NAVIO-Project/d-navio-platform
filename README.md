@@ -1,5 +1,9 @@
 <p align="center">
-  <img src="assets/PrimaryLogo.png" alt="D-NAVIO logo" width="320" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/PrimaryLogo-white-bg.png">
+    <source media="(prefers-color-scheme: light)" srcset="assets/PrimaryLogo.png">
+    <img src="assets/PrimaryLogo-white-bg.png" alt="D-NAVIO logo" width="320" />
+  </picture>
 </p>
 
 # D-NAVIO 
@@ -90,7 +94,8 @@ docker compose -f docker/docker-compose.dev.yml down
 ```text
 d-navio/
 ├── assets/
-│   └── PrimaryLogo.png
+│   ├── PrimaryLogo.png
+│   └── PrimaryLogo-white-bg.png
 ├── CONTRIBUTING.md
 ├── README.md
 ├── docker/
