@@ -4,6 +4,7 @@ metadata:
   labels:
     io.kompose.service: kafka-data
   name: kafka-data
+  namespace: dnavio-dev
 spec:
   accessModes:
     - ReadWriteOnce
