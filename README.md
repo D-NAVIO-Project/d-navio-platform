@@ -40,6 +40,21 @@ The initial logical topic set covers:
 - `dnavio.failures`
 - `dnavio.risk`
 
+## Kafka Message Broker Validation
+
+Kafka is used as the asynchronous event backbone of the D-NAVIO platform.
+
+For topic creation and producer/consumer validation, see
+[`docs/kafka-guide.md`](docs/kafka-guide.md).
+
+The initial logical topic set includes:
+
+- `dnavio.telemetry.raw`
+- `dnavio.telemetry.processed`
+- `dnavio.alerts`
+- `dnavio.failures`
+- `dnavio.risk`
+
 ## Prerequisites
 
 **Kubernetes setup:**
@@ -146,6 +161,7 @@ d-navio/
 │   ├── architecture.md
 │   ├── install-docker.md
 │   ├── install-k8s.md
+│   ├── kafka-guide.md
 │   └── partners-onboarding.md
 ├── infra/
 │   └── local-path-provisioner.yaml
@@ -159,6 +175,12 @@ d-navio/
     ├── minio-deployment.yaml
     ├── minio-service.yaml
     └── minio-data-persistentvolumeclaim.yaml
+└── scripts/
+    └── kafka/
+        ├── create-topics.sh
+        ├── list-topics.sh
+        ├── produce-test-message.sh
+        └── consume-topic.sh
 ```
 
 ## Deployment Targets
