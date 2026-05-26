@@ -6,62 +6,57 @@
   </picture>
 </p>
 
-# D-NAVIO 
-
-REPO-TYPE
+# D-NAVIO
 
 Initial infrastructure setup for the D-NAVIO Digital Twin platform.
 
 This repository contains the initial deployment configuration and documentation
-for the core platform services used in D-NAVIO.
+for the D-NAVIO core platform services.
 
-## Getting Started
-
-These instructions will get a development instance of the D-NAVIO platform
-running on a local machine or VM for testing and development purposes.
-
-See the documentation under `docs/` for architecture, installation,
-and partner onboarding notes.
+Docker Compose is maintained as the validated development/bootstrap baseline,
+while this branch introduces the Kubernetes bootstrap deployment for the
+development cluster.
 
 ## Platform Components
 
 The initial platform stack includes:
 
-- Kafka (KRaft mode) for event streaming and metadata exchange
-- Keycloak for authentication and identity management
-- MinIO for object storage of datasets and binary artifacts
+- **Kafka** (KRaft mode) — asynchronous event backbone and message broker
+- **Keycloak** — authentication and identity management
+- **MinIO** — object storage for datasets and binary artefacts
 
 ## Architecture Principles
 
-D-NAVIO uses Kafka as an event backbone for metadata, orchestration signals,
-and lifecycle events, while bulk datasets and binary artifacts are stored
-in MinIO object storage.
+D-NAVIO uses Kafka as the event backbone for live events and async
+communication between platform components (DML, DYNAMO, DSS, XAI, FRS,
+UI backend, Observability). Bulk datasets and binary artefacts are stored
+in MinIO. Authentication and authorisation are handled through Keycloak.
 
-Authentication and service authorization are handled through Keycloak.
+Kafka carries live events only — it is not used as a database.
+The initial logical topic set covers:
 
-This means:
-
-- Large files are uploaded to MinIO
-- Kafka carries metadata, pointers, and processing events
-- Services consume Kafka events and fetch data from MinIO
-- Access to services is managed through Keycloak
+- `dnavio.telemetry.raw` / `dnavio.telemetry.processed`
+- `dnavio.alerts`
+- `dnavio.failures`
+- `dnavio.risk`
 
 ## Prerequisites
 
-Before running the platform ensure the following are installed:
+**Kubernetes setup:**
+
+- `kubectl`
+- A running Kubernetes cluster (validated with kubeadm + Flannel on a single-node VM)
+- Git
+
+**Docker Compose setup (bootstrap baseline):**
 
 - Docker
 - Docker Compose
 - Git
 
-Optional but recommended:
-
-- VS Code
-- PyCharm
+Optional: VS Code, PyCharm
 
 ## Installing
-
-Clone this repository:
 
 ```bash
 git clone https://github.com/epu-ntua/d-navio.git
@@ -70,49 +65,110 @@ cd d-navio
 
 ## Running
 
-Start the initial development stack:
+### Kubernetes development cluster
+
+Apply the storage provisioner first (required on bare kubeadm clusters with no default StorageClass):
+
+```bash
+kubectl apply -f infra/local-path-provisioner.yaml
+```
+
+> **Note:** `local-path-provisioner` is used only for the single-node development cluster.
+> Pilot-grade or production-like deployments should use a proper CSI-backed storage solution,
+> such as Longhorn, Rook/Ceph, NFS CSI, or cloud-managed persistent volumes depending on the
+> target infrastructure.
+
+Deploy all platform services:
+
+```bash
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/
+```
+
+Check status:
+
+```bash
+kubectl get pods,pvc,svc -n dnavio-dev
+```
+
+See [`docs/install-k8s.md`](docs/install-k8s.md) for the full Kubernetes installation guide.
+
+### Docker Compose bootstrap baseline
 
 ```bash
 docker compose -f docker/docker-compose.dev.yml up -d
 ```
 
-Stop the stack:
+Stop:
 
 ```bash
 docker compose -f docker/docker-compose.dev.yml down
 ```
 
+See [`docs/install-docker.md`](docs/install-docker.md) for the full Docker installation guide.
+
 ## Service Endpoints
 
-- Kafka broker: `localhost:9092`
-- Keycloak: `http://localhost:8080`
-- MinIO API: `http://localhost:9000`
-- MinIO Console: `http://localhost:9001`
+### Kubernetes (via port-forward)
+
+Services are ClusterIP — access them with `kubectl port-forward`:
+
+```bash
+kubectl port-forward svc/keycloak 18080:8080 -n dnavio-dev
+kubectl port-forward svc/minio 19000:9000 19001:9001 -n dnavio-dev
+```
+
+| Service       | Forwarded endpoint           |
+|---------------|------------------------------|
+| Keycloak      | `http://localhost:18080`     |
+| MinIO Console | `http://localhost:19001`     |
+| MinIO API     | `http://localhost:19000`     |
+
+### Docker Compose
+
+| Service       | Endpoint                |
+|---------------|-------------------------|
+| Kafka broker  | `localhost:9092`        |
+| Keycloak      | `http://localhost:8080` |
+| MinIO API     | `http://localhost:9000` |
+| MinIO Console | `http://localhost:9001` |
+
+Default development credentials: `admin / adminadmin`
 
 ## Repository Structure
 
 ```text
 d-navio/
 ├── assets/
-│   ├── PrimaryLogo.png
-│   └── PrimaryLogo-white-bg.png
-├── CONTRIBUTING.md
-├── README.md
 ├── docker/
 │   └── docker-compose.dev.yml
 ├── docs/
 │   ├── architecture.md
-│   ├── install.md
+│   ├── install-docker.md
+│   ├── install-k8s.md
 │   └── partners-onboarding.md
-└── scripts/
+├── infra/
+│   └── local-path-provisioner.yaml
+└── k8s/
+    ├── namespace.yaml
+    ├── kafka-deployment.yaml
+    ├── kafka-service.yaml
+    ├── kafka-data-persistentvolumeclaim.yaml
+    ├── keycloak-deployment.yaml
+    ├── keycloak-service.yaml
+    ├── minio-deployment.yaml
+    ├── minio-service.yaml
+    └── minio-data-persistentvolumeclaim.yaml
 ```
 
-## Deployment
+## Deployment Targets
 
-This repository currently provides an initial Docker-based deployment
-for development and VM bootstrap purposes.
-
-The first deployment target is a development VM for the D-NAVIO project.
+| Environment         | Stack                 | Status    |
+|---------------------|-----------------------|-----------|
+| Development VM      | Docker Compose        | Validated |
+| Development cluster | Kubernetes (kubeadm)  | Validated |
+| Integration / Test  | Kubernetes            | Planned   |
+| Pilot / Demo        | Kubernetes            | Planned   |
 
 ## Contributing
 

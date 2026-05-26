@@ -44,10 +44,15 @@ Large files, raw datasets, binary artifacts, and exports are stored in MinIO.
 ### 2. Kafka carries events and metadata
 Kafka is used for:
 
-- metadata exchange
-- orchestration signals
-- lifecycle events
+- telemetry event streaming
+- alerts, failures, and risk events
+- orchestration signals and lifecycle events
 - processing notifications
+
+Kafka is not treated as persistent operational storage. Persistent structured
+telemetry, alerts, failures, and risk states are expected to be owned by the
+relevant DML/backend/FRS services, while MinIO stores large artefacts such as
+datasets, exports, binary files, and optional visualization assets.
 
 ### 3. Keycloak manages access
 Keycloak is used for:
@@ -66,12 +71,12 @@ Keycloak is used for:
 
 ## Initial Development Scope
 
-The initial scope of this repository is:
+The initial development scope includes both the validated Docker Compose baseline
+and a Kubernetes bootstrap deployment for the development cluster.
 
 - single-node Kafka in KRaft mode
 - single Keycloak instance
 - single MinIO instance
-- Docker-based deployment for development / bootstrap
 
 ## Future Extensions
 

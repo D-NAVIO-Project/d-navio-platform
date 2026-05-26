@@ -1,9 +1,10 @@
-# Installation Guide
+# Docker Bootstrap Installation Guide
 
 ## Purpose
 
-This guide describes how to run the initial D-NAVIO platform stack
-for development purposes.
+This guide describes the Docker Compose bootstrap baseline for the D-NAVIO
+platform. For the Kubernetes bootstrap setup, see
+[`docs/install-k8s.md`](install-k8s.md).
 
 ## Prerequisites
 
@@ -165,3 +166,14 @@ For VM deployment the following will need to be validated:
 - exposed ports
 - advertised Kafka listener configuration
 - persistent storage paths
+
+## Kubernetes Deployment
+
+For Kubernetes deployment, see the root README Kubernetes section.
+The current Kubernetes baseline uses:
+
+- kubeadm single-node cluster
+- Flannel CNI
+- local-path-provisioner for development PVCs
+- namespace: `dnavio-dev`
+
