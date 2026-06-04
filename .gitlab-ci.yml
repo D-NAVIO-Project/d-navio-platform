@@ -1,0 +1,37 @@
+stages:
+  - validate
+
+validate_yaml:
+  stage: validate
+  image: python:3.11-slim
+  before_script:
+    - pip install --no-cache-dir pyyaml
+  script:
+    - python scripts/ci/validate-yaml.py
+
+shellcheck:
+  stage: validate
+  image: koalaman/shellcheck-alpine:stable
+  script:
+    - shellcheck --severity=error scripts/*.sh scripts/kafka/*.sh
+
+check_executable:
+  stage: validate
+  image: alpine:latest
+  script:
+    - test -x scripts/check-services.sh
+    - test -x scripts/kafka/create-topics.sh
+    - test -x scripts/kafka/list-topics.sh
+    - test -x scripts/kafka/produce-test-message.sh
+    - test -x scripts/kafka/consume-topic.sh
+
+check_docs:
+  stage: validate
+  image: alpine:latest
+  script:
+    - test -f docs/architecture.md
+    - test -f docs/install-docker.md
+    - test -f docs/install-k8s.md
+    - test -f docs/kafka-guide.md
+    - test -f docs/operations/service-health-checks.md
+    - test -f docs/operations/ci-bootstrap.md
