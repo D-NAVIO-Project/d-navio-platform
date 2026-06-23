@@ -12,7 +12,7 @@ import sys
 import yaml
 
 SEARCH_TARGETS = [
-    Path(".gitlab-ci.yml"),
+    Path(".github"),
     Path("k8s"),
     Path("infra"),
 ]

@@ -1,0 +1,48 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-topics-init
+  labels:
+    {{- include "dnavio-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kafka
+  annotations:
+    # Runs after every install and upgrade; safe because --if-not-exists is idempotent.
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "1"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "dnavio-platform.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: kafka-topics-init
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+        - name: wait-for-kafka
+          image: "{{ .Values.kafka.image.repository }}:{{ .Values.kafka.image.tag }}"
+          command:
+            - /bin/bash
+            - -c
+            - |
+              until kafka-topics --bootstrap-server kafka:9092 --list > /dev/null 2>&1; do
+                echo "Waiting for Kafka broker..."
+                sleep 5
+              done
+              echo "Kafka broker is ready."
+      containers:
+        - name: create-topics
+          image: "{{ .Values.kafka.image.repository }}:{{ .Values.kafka.image.tag }}"
+          command:
+            - /bin/bash
+            - -c
+            - |
+              {{- range .Values.kafka.topics }}
+              kafka-topics --bootstrap-server kafka:9092 \
+                --create --topic {{ .name }} \
+                --partitions {{ .partitions }} \
+                --replication-factor {{ .replicationFactor }} \
+                --if-not-exists
+              {{- end }}
+              echo "All D-NAVIO topics created."

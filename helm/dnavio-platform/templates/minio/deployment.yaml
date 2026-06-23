@@ -1,34 +1,40 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    kompose.cmd: kompose convert -f docker/docker-compose.dev.yml -o k8s/
-    kompose.version: 1.38.0 (a8f5d1cbd)
-  labels:
-    io.kompose.service: minio
   name: minio
-  namespace: dnavio-dev
+  labels:
+    {{- include "dnavio-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: minio
 spec:
   replicas: 1
   selector:
     matchLabels:
-      io.kompose.service: minio
+      {{- include "dnavio-platform.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: minio
   strategy:
     type: Recreate
   template:
     metadata:
-      annotations:
-        kompose.cmd: kompose convert -f docker/docker-compose.dev.yml -o k8s/
-        kompose.version: 1.38.0 (a8f5d1cbd)
       labels:
-        io.kompose.service: minio
+        {{- include "dnavio-platform.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: minio
     spec:
+      restartPolicy: Always
       containers:
-        - args:
+        - name: minio
+          image: "{{ .Values.minio.image.repository }}:{{ .Values.minio.image.tag }}"
+          args:
             - server
             - /data
             - --console-address
-            - :9001
+            - ":9001"
+          ports:
+            - name: api
+              containerPort: 9000
+              protocol: TCP
+            - name: console
+              containerPort: 9001
+              protocol: TCP
           env:
             - name: MINIO_ROOT_USER
               valueFrom:
@@ -40,17 +46,9 @@ spec:
                 secretKeyRef:
                   name: minio-credentials
                   key: root-password
-          image: minio/minio:RELEASE.2024-11-07T00-52-20Z
-          name: dnavio-minio
-          ports:
-            - containerPort: 9000
-              protocol: TCP
-            - containerPort: 9001
-              protocol: TCP
           volumeMounts:
-            - mountPath: /data
-              name: minio-data
-      restartPolicy: Always
+            - name: minio-data
+              mountPath: /data
       volumes:
         - name: minio-data
           persistentVolumeClaim:
