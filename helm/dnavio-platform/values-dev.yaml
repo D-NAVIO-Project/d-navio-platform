@@ -1,0 +1,8 @@
+# Development cluster overrides (single-node kubeadm, constrained storage).
+kafka:
+  storage:
+    size: 2Gi
+
+minio:
+  storage:
+    size: 5Gi

@@ -1,0 +1,19 @@
+# Force LF line endings for all text files in the repo,
+# regardless of the OS they are checked out on.
+* text=auto eol=lf
+
+# Shell scripts must always be LF — CRLF breaks bash on Linux runners.
+*.sh text eol=lf
+
+# YAML files must be LF for kubectl/helm compatibility.
+*.yaml text eol=lf
+*.yml  text eol=lf
+
+# Python
+*.py text eol=lf
+
+# Markdown and docs — LF for consistency.
+*.md text eol=lf
+
+# Binaries — no line ending conversion.
+*.png binary

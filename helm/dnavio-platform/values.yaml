@@ -1,0 +1,48 @@
+# Default values for dnavio-platform.
+# Override per environment with values-<env>.yaml.
+
+kafka:
+  image:
+    repository: confluentinc/cp-kafka
+    tag: "7.8.3"
+  # KRaft single-node config — do not change clusterId after first deploy.
+  clusterId: "1L6g7nGhU-eAKfL--X25wo"
+  nodeId: 1
+  storage:
+    size: 5Gi
+  # Topic definitions — consumed by the post-install Job and by dependent services.
+  # Add new topics here; the Job is idempotent (--if-not-exists).
+  topics:
+    - name: dnavio.telemetry.raw
+      partitions: 1
+      replicationFactor: 1
+    - name: dnavio.telemetry.processed
+      partitions: 1
+      replicationFactor: 1
+    - name: dnavio.alerts
+      partitions: 1
+      replicationFactor: 1
+    - name: dnavio.failures
+      partitions: 1
+      replicationFactor: 1
+    - name: dnavio.risk
+      partitions: 1
+      replicationFactor: 1
+
+keycloak:
+  image:
+    repository: quay.io/keycloak/keycloak
+    tag: "26.1"
+  adminUsername: admin
+  # Set via --set keycloak.adminPassword=... in CI. Never commit a real value here.
+  adminPassword: ""
+
+minio:
+  image:
+    repository: minio/minio
+    tag: "RELEASE.2024-11-07T00-52-20Z"
+  rootUser: admin
+  # Set via --set minio.rootPassword=... in CI. Never commit a real value here.
+  rootPassword: ""
+  storage:
+    size: 10Gi

@@ -1,0 +1,119 @@
+name: Validate
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate-yaml:
+    name: YAML syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install --no-cache-dir pyyaml
+      - run: python scripts/ci/validate-yaml.py
+
+  shellcheck:
+    name: Shell lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ludeeus/action-shellcheck@2.0.0
+        with:
+          severity: error
+          scandir: ./scripts
+
+  helm-lint:
+    name: Helm lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: "v3.17.0"
+      - name: Lint chart (dev values)
+        run: helm lint ./helm/dnavio-platform -f helm/dnavio-platform/values-dev.yaml
+      - name: Lint chart (integration values)
+        run: helm lint ./helm/dnavio-platform -f helm/dnavio-platform/values-integration.yaml
+      - name: Lint chart (pilot values)
+        run: helm lint ./helm/dnavio-platform -f helm/dnavio-platform/values-pilot.yaml
+
+  kubeconform:
+    name: Kubernetes schema
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: "v3.17.0"
+      - name: Install kubeconform
+        run: |
+          curl -sL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz \
+            | tar -xz
+          sudo mv kubeconform /usr/local/bin/
+      - name: Validate rendered chart (dev)
+        run: |
+          helm template dnavio-platform ./helm/dnavio-platform \
+            -f helm/dnavio-platform/values-dev.yaml \
+            --set keycloak.adminPassword=placeholder \
+            --set minio.rootPassword=placeholder \
+            | kubeconform -strict -summary -kubernetes-version 1.30.0 -
+      - name: Validate rendered chart (integration)
+        run: |
+          helm template dnavio-platform ./helm/dnavio-platform \
+            -f helm/dnavio-platform/values-integration.yaml \
+            --set keycloak.adminPassword=placeholder \
+            --set minio.rootPassword=placeholder \
+            | kubeconform -strict -summary -kubernetes-version 1.30.0 -
+      - name: Validate rendered chart (pilot)
+        run: |
+          helm template dnavio-platform ./helm/dnavio-platform \
+            -f helm/dnavio-platform/values-pilot.yaml \
+            --set keycloak.adminPassword=placeholder \
+            --set minio.rootPassword=placeholder \
+            | kubeconform -strict -summary -kubernetes-version 1.30.0 -
+      - name: Validate infra manifests (allow unknown CRDs)
+        run: |
+          kubeconform \
+            -summary \
+            -ignore-missing-schemas \
+            -kubernetes-version 1.30.0 \
+            infra/*.yaml
+
+  docker-compose-validate:
+    name: Docker Compose config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate docker-compose.dev.yml
+        run: docker compose -f docker/docker-compose.dev.yml config --quiet
+
+  check-executable:
+    name: Executable bits
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check script permissions
+        run: |
+          test -x scripts/check-services.sh
+          test -x scripts/kafka/create-topics.sh
+          test -x scripts/kafka/list-topics.sh
+          test -x scripts/kafka/produce-test-message.sh
+          test -x scripts/kafka/consume-topic.sh
+
+  check-docs:
+    name: Documentation presence
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check required docs
+        run: |
+          test -f docs/architecture.md
+          test -f docs/install-docker.md
+          test -f docs/install-k8s.md
+          test -f docs/kafka-guide.md
+          test -f docs/operations/service-health-checks.md
+          test -f docs/operations/ci-bootstrap.md
