@@ -2,103 +2,93 @@
 
 ## Purpose
 
-This document describes the initial CI baseline for the D-NAVIO repository on
-GitLab.
+This document describes the CI/CD pipeline for the D-NAVIO repository on GitHub.
 
-The goal of this baseline is not to perform automated deployment, but to validate
-repository quality before changes are merged. CD (deployment to dev/test/pilot
-environments) is intentionally out of scope and will be addressed in a later
-branch once the team aligns on environment strategy.
+The pipeline runs on every push and pull request (validate jobs) and deploys to
+dev, integration, and pilot environments on every merge to `main` (deploy jobs).
 
-## Pipeline Stages
+## Workflows
 
-The current pipeline has one stage:
+The pipeline is defined in `.github/workflows/`:
 
 ```text
-validate
+validate.yml   — runs on every push and PR
+deploy.yml     — runs after Validate succeeds on main
 ```
 
-All jobs run on public images and require no GitLab runner with cluster access
-or secrets.
+## Validate Jobs
 
-## Jobs
+All validate jobs run on GitHub-hosted `ubuntu-latest` runners. No secrets or
+cluster access required.
 
-### validate_yaml
+| Job | What it checks |
+|-----|----------------|
+| `validate-yaml` | YAML syntax for `.github/`, `helm/`, `infra/` via `scripts/ci/validate-yaml.py` |
+| `shellcheck` | Shell scripts under `scripts/` — `--severity=error` |
+| `helm-lint` | Helm chart linted against all three environment values files |
+| `kubeconform` | Rendered Helm manifests validated against Kubernetes 1.30 schema |
+| `docker-compose-validate` | `docker/docker-compose.dev.yml` config syntax |
+| `check-executable` | Operational scripts retain their executable bit |
+| `check-docs` | Key documentation files are present |
 
-Parses every YAML file under known repository paths and fails on syntax errors.
+## Deploy Jobs
 
-Targets:
+Deploy jobs run on the self-hosted `dnavio-vm` runner (the kubeadm dev VM).
+They require GitHub environment secrets `KEYCLOAK_ADMIN_PASSWORD` and
+`MINIO_ROOT_PASSWORD` to be configured per environment in the GitHub repo
+settings.
 
-- `.gitlab-ci.yml`
-- `k8s/` (Kubernetes manifests)
-- `infra/` (cluster prerequisites such as the storage provisioner)
+Deployment order: `dev` → `integration` → `pilot`. Each stage gates on the
+previous one succeeding.
 
-`docker/docker-compose.dev.yml` is intentionally excluded — D-NAVIO's
-operational direction is Kubernetes-only. The Docker Compose file remains in
-the repo as the validated bootstrap baseline but is not gated by CI.
-
-### shellcheck
-
-Runs `shellcheck --severity=error` over all operational shell scripts:
-
-- `scripts/*.sh`
-- `scripts/kafka/*.sh`
-
-Warnings pass; only real errors fail the job.
-
-### check_executable
-
-Asserts that operational scripts retain their executable bit:
-
-- `scripts/check-services.sh`
-- `scripts/kafka/create-topics.sh`
-- `scripts/kafka/list-topics.sh`
-- `scripts/kafka/produce-test-message.sh`
-- `scripts/kafka/consume-topic.sh`
-
-### check_docs
-
-Asserts that key documentation exists. Protects against accidental file
-removal during refactors.
-
-- `docs/architecture.md`
-- `docs/install-docker.md`
-- `docs/install-k8s.md`
-- `docs/kafka-guide.md`
-- `docs/operations/service-health-checks.md`
-- `docs/operations/ci-bootstrap.md`
-
-## Run Locally
-
-Same checks the CI runs, from the repository root:
+All deploys use:
 
 ```bash
-python3 scripts/ci/validate-yaml.py
-shellcheck --severity=error scripts/*.sh scripts/kafka/*.sh
+helm upgrade --install dnavio-platform ./helm/dnavio-platform \
+  --namespace <env> \
+  --create-namespace \
+  -f helm/dnavio-platform/values-<env>.yaml \
+  --wait --timeout 10m --atomic
 ```
 
-`pyyaml` is the only Python dependency. `shellcheck` is widely packaged
-(`apt install shellcheck`, `brew install shellcheck`); if it is not installed
-locally, the GitLab pipeline will still run it.
+Passwords are injected at deploy time via a temporary values file — never
+written to the repository.
+
+## Run Validate Locally
+
+```bash
+# YAML syntax
+python3 scripts/ci/validate-yaml.py
+
+# Shell lint
+shellcheck --severity=error scripts/*.sh scripts/kafka/*.sh
+
+# Helm lint
+helm lint ./helm/dnavio-platform -f helm/dnavio-platform/values-dev.yaml
+
+# Kubernetes schema validation
+helm template dnavio-platform ./helm/dnavio-platform \
+  -f helm/dnavio-platform/values-dev.yaml \
+  --set keycloak.adminPassword=placeholder \
+  --set minio.rootPassword=placeholder \
+  | kubeconform -strict -summary -kubernetes-version 1.30.0 -
+```
+
+## Self-Hosted Runner Setup
+
+The deploy pipeline requires a GitHub Actions runner registered on the kubeadm
+VM with the label `dnavio-vm`. See GitHub → Settings → Actions → Runners to
+generate the registration token and follow the Linux runner install instructions.
 
 ## Current Limitations
 
-This CI baseline does not yet perform:
-
-- Kubernetes schema validation against a real API server
-- Container image builds
-- Security scanning
-- Integration tests
-- Deployment to any environment
+- No TLS — all services run over HTTP in dev mode
+- No persistent database for Keycloak — realm config is lost on pod restart
+- Secrets injected via CI `--set` flags — proper secrets management is a
+  future branch
 
 ## Next Improvements
 
-Possible next steps, in roughly increasing complexity:
-
-- Replace pure YAML syntax checks with `kubeconform` or `kubeval` for proper
-  Kubernetes schema validation
-- Add Markdown linting
-- Add schema validation for Kafka event contracts
-- Add Docker image build validation when D-NAVIO services are introduced
-- Add deployment stages for `dnavio-dev` / `dnavio-test` / `dnavio-pilot`
-  once the environment strategy is defined
+- `feat/keycloak-baseline` — realm setup, client config, token scripts
+- `feat/rbac-access-model` — Kubernetes RBAC for team and partners
+- `feat/secrets-management` — replace CI `--set` with proper secrets store

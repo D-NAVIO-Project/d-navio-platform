@@ -13,9 +13,13 @@ import yaml
 
 SEARCH_TARGETS = [
     Path(".github"),
-    Path("k8s"),
+    Path("helm"),
     Path("infra"),
 ]
+
+# Helm template files use Go template syntax — not valid YAML until rendered.
+# They are validated by 'helm lint' and 'kubeconform' in CI instead.
+SKIP_DIRS = {"templates"}
 
 errors: list[tuple[Path, Exception]] = []
 
@@ -35,7 +39,8 @@ for target in SEARCH_TARGETS:
         validate_yaml_file(target)
     elif target.is_dir():
         yaml_paths = sorted(
-            list(target.rglob("*.yml")) + list(target.rglob("*.yaml"))
+            p for p in list(target.rglob("*.yml")) + list(target.rglob("*.yaml"))
+            if not any(part in SKIP_DIRS for part in p.parts)
         )
         for path in yaml_paths:
             validate_yaml_file(path)
