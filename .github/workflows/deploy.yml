@@ -22,22 +22,20 @@ jobs:
       - name: Set kubectl context
         run: kubectl config use-context kubernetes-admin@kubernetes
 
-      - name: Adopt pre-existing resources into Helm
+      - name: Migrate manually-applied resources to Helm
         run: |
           NS=dnavio-dev
           RELEASE=dnavio-platform
-          for kind in pvc deployment service secret statefulset; do
-            resources=$(kubectl get "$kind" -n "$NS" -o name 2>/dev/null || true)
-            for res in $resources; do
-              kubectl annotate "$res" -n "$NS" \
-                "meta.helm.sh/release-name=$RELEASE" \
-                "meta.helm.sh/release-namespace=$NS" \
-                --overwrite 2>/dev/null || true
-              kubectl label "$res" -n "$NS" \
-                "app.kubernetes.io/managed-by=Helm" \
-                --overwrite 2>/dev/null || true
-            done
-          done
+          # Only on first install: remove kompose-generated resources whose selectors
+          # and PVC specs conflict with what Helm expects. After a successful Helm
+          # install these resources are Helm-managed and this block is skipped.
+          if ! helm status "$RELEASE" -n "$NS" > /dev/null 2>&1; then
+            echo "No Helm release found — removing manually-applied resources before install"
+            kubectl delete deployment kafka keycloak minio \
+              -n "$NS" --ignore-not-found --timeout=90s || true
+            kubectl delete pvc kafka-data minio-data \
+              -n "$NS" --ignore-not-found --timeout=90s || true
+          fi
 
       - name: Deploy to dnavio-dev
         env:
@@ -74,22 +72,17 @@ jobs:
       - name: Set kubectl context
         run: kubectl config use-context kubernetes-admin@kubernetes
 
-      - name: Adopt pre-existing resources into Helm
+      - name: Migrate manually-applied resources to Helm
         run: |
           NS=dnavio-integration
           RELEASE=dnavio-platform
-          for kind in pvc deployment service secret statefulset; do
-            resources=$(kubectl get "$kind" -n "$NS" -o name 2>/dev/null || true)
-            for res in $resources; do
-              kubectl annotate "$res" -n "$NS" \
-                "meta.helm.sh/release-name=$RELEASE" \
-                "meta.helm.sh/release-namespace=$NS" \
-                --overwrite 2>/dev/null || true
-              kubectl label "$res" -n "$NS" \
-                "app.kubernetes.io/managed-by=Helm" \
-                --overwrite 2>/dev/null || true
-            done
-          done
+          if ! helm status "$RELEASE" -n "$NS" > /dev/null 2>&1; then
+            echo "No Helm release found — removing manually-applied resources before install"
+            kubectl delete deployment kafka keycloak minio \
+              -n "$NS" --ignore-not-found --timeout=90s || true
+            kubectl delete pvc kafka-data minio-data \
+              -n "$NS" --ignore-not-found --timeout=90s || true
+          fi
 
       - name: Deploy to dnavio-integration
         env:
@@ -126,22 +119,17 @@ jobs:
       - name: Set kubectl context
         run: kubectl config use-context kubernetes-admin@kubernetes
 
-      - name: Adopt pre-existing resources into Helm
+      - name: Migrate manually-applied resources to Helm
         run: |
           NS=dnavio-pilot
           RELEASE=dnavio-platform
-          for kind in pvc deployment service secret statefulset; do
-            resources=$(kubectl get "$kind" -n "$NS" -o name 2>/dev/null || true)
-            for res in $resources; do
-              kubectl annotate "$res" -n "$NS" \
-                "meta.helm.sh/release-name=$RELEASE" \
-                "meta.helm.sh/release-namespace=$NS" \
-                --overwrite 2>/dev/null || true
-              kubectl label "$res" -n "$NS" \
-                "app.kubernetes.io/managed-by=Helm" \
-                --overwrite 2>/dev/null || true
-            done
-          done
+          if ! helm status "$RELEASE" -n "$NS" > /dev/null 2>&1; then
+            echo "No Helm release found — removing manually-applied resources before install"
+            kubectl delete deployment kafka keycloak minio \
+              -n "$NS" --ignore-not-found --timeout=90s || true
+            kubectl delete pvc kafka-data minio-data \
+              -n "$NS" --ignore-not-found --timeout=90s || true
+          fi
 
       - name: Deploy to dnavio-pilot
         env:
