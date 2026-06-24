@@ -6,54 +6,51 @@ on:
     types: [completed]
     branches: [main]
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   deploy-dev:
     name: Deploy → dev
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
-    # Runs on the local self-hosted runner — has direct access to Docker Desktop Kubernetes.
-    runs-on: [self-hosted, dnavio-dev]
+    runs-on: [self-hosted, dnavio-vm]
     environment: dev
-    defaults:
-      run:
-        shell: powershell
     steps:
       - uses: actions/checkout@v4
 
       - name: Set kubectl context
-        run: kubectl config use-context docker-desktop
+        run: kubectl config use-context kubernetes-admin@kubernetes
 
       - name: Deploy to dnavio-dev
         env:
           KEYCLOAK_PASS: ${{ secrets.KEYCLOAK_ADMIN_PASSWORD }}
           MINIO_PASS: ${{ secrets.MINIO_ROOT_PASSWORD }}
         run: |
-          $tmp = [System.IO.Path]::GetTempFileName() -replace '\.tmp$', '.yaml'
-          $k = $env:KEYCLOAK_PASS | ConvertTo-Json
-          $m = $env:MINIO_PASS   | ConvertTo-Json
-          Set-Content $tmp "keycloak:`n  adminPassword: $k`nminio:`n  rootPassword: $m"
-          try {
-            helm upgrade --install dnavio-platform ./helm/dnavio-platform `
-              --namespace dnavio-dev `
-              --create-namespace `
-              -f helm/dnavio-platform/values-dev.yaml `
-              -f $tmp `
-              --wait `
-              --timeout 10m `
-              --atomic
-          } finally {
-            Remove-Item $tmp -Force -ErrorAction SilentlyContinue
-          }
+          tmp=$(mktemp /tmp/secrets-XXXXXX.yaml)
+          trap "rm -f $tmp" EXIT
+          python3 -c "
+          import os, json
+          print('keycloak:')
+          print('  adminPassword: ' + json.dumps(os.environ['KEYCLOAK_PASS']))
+          print('minio:')
+          print('  rootPassword: ' + json.dumps(os.environ['MINIO_PASS']))
+          " > "$tmp"
+          helm upgrade --install dnavio-platform ./helm/dnavio-platform \
+            --namespace dnavio-dev \
+            --create-namespace \
+            -f helm/dnavio-platform/values-dev.yaml \
+            -f "$tmp" \
+            --wait \
+            --timeout 10m \
+            --atomic
 
   deploy-integration:
     name: Deploy → integration
     needs: deploy-dev
     if: ${{ needs.deploy-dev.result == 'success' }}
-    # Runs on the self-hosted runner on the kubeadm VM.
     runs-on: [self-hosted, dnavio-vm]
     environment: integration
-    defaults:
-      run:
-        shell: bash
     steps:
       - uses: actions/checkout@v4
 
@@ -87,12 +84,8 @@ jobs:
     name: Deploy → pilot
     needs: deploy-integration
     if: ${{ needs.deploy-integration.result == 'success' }}
-    # Runs on the self-hosted runner on the kubeadm VM.
     runs-on: [self-hosted, dnavio-vm]
     environment: pilot
-    defaults:
-      run:
-        shell: bash
     steps:
       - uses: actions/checkout@v4
 
