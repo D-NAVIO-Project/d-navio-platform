@@ -1,21 +1,27 @@
 # Pilot / demo environment overrides.
+# Distinct NodePorts from dev/integration — all three share the same VM node.
+keycloak:
+  hostname: "http://147.102.6.143:32080"
+  service:
+    nodePort: 32080
+
 kafka:
+  external:
+    advertisedHost: "147.102.6.143"
+    nodePort: 32094
   storage:
     size: 10Gi
   topics:
-    - name: dnavio.telemetry.raw
+    - name: dnavio.dml.telemetry.raw
       partitions: 3
       replicationFactor: 1
-    - name: dnavio.telemetry.processed
+    - name: dnavio.dml.telemetry.normalized
       partitions: 3
       replicationFactor: 1
-    - name: dnavio.alerts
+    - name: dnavio.frs.failures.reported
       partitions: 2
       replicationFactor: 1
-    - name: dnavio.failures
-      partitions: 2
-      replicationFactor: 1
-    - name: dnavio.risk
+    - name: dnavio.dml.deadletter
       partitions: 2
       replicationFactor: 1
 

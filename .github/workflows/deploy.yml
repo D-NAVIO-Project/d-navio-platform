@@ -41,6 +41,7 @@ jobs:
         env:
           KEYCLOAK_PASS: ${{ secrets.KEYCLOAK_ADMIN_PASSWORD }}
           MINIO_PASS: ${{ secrets.MINIO_ROOT_PASSWORD }}
+          DNAVIO_API_SECRET: ${{ secrets.DNAVIO_API_CLIENT_SECRET }}
         run: |
           tmp=$(mktemp /tmp/secrets-XXXXXX.yaml)
           trap "rm -f $tmp" EXIT
@@ -48,6 +49,9 @@ jobs:
           import os, json
           print('keycloak:')
           print('  adminPassword: ' + json.dumps(os.environ['KEYCLOAK_PASS']))
+          print('  clients:')
+          print('    dnavioApi:')
+          print('      secret: ' + json.dumps(os.environ['DNAVIO_API_SECRET']))
           print('minio:')
           print('  rootPassword: ' + json.dumps(os.environ['MINIO_PASS']))
           " > "$tmp"
@@ -88,6 +92,7 @@ jobs:
         env:
           KEYCLOAK_PASS: ${{ secrets.KEYCLOAK_ADMIN_PASSWORD }}
           MINIO_PASS: ${{ secrets.MINIO_ROOT_PASSWORD }}
+          DNAVIO_API_SECRET: ${{ secrets.DNAVIO_API_CLIENT_SECRET }}
         run: |
           tmp=$(mktemp /tmp/secrets-XXXXXX.yaml)
           trap "rm -f $tmp" EXIT
@@ -95,6 +100,9 @@ jobs:
           import os, json
           print('keycloak:')
           print('  adminPassword: ' + json.dumps(os.environ['KEYCLOAK_PASS']))
+          print('  clients:')
+          print('    dnavioApi:')
+          print('      secret: ' + json.dumps(os.environ['DNAVIO_API_SECRET']))
           print('minio:')
           print('  rootPassword: ' + json.dumps(os.environ['MINIO_PASS']))
           " > "$tmp"
@@ -135,6 +143,7 @@ jobs:
         env:
           KEYCLOAK_PASS: ${{ secrets.KEYCLOAK_ADMIN_PASSWORD }}
           MINIO_PASS: ${{ secrets.MINIO_ROOT_PASSWORD }}
+          DNAVIO_API_SECRET: ${{ secrets.DNAVIO_API_CLIENT_SECRET }}
         run: |
           tmp=$(mktemp /tmp/secrets-XXXXXX.yaml)
           trap "rm -f $tmp" EXIT
@@ -142,6 +151,9 @@ jobs:
           import os, json
           print('keycloak:')
           print('  adminPassword: ' + json.dumps(os.environ['KEYCLOAK_PASS']))
+          print('  clients:')
+          print('    dnavioApi:')
+          print('      secret: ' + json.dumps(os.environ['DNAVIO_API_SECRET']))
           print('minio:')
           print('  rootPassword: ' + json.dumps(os.environ['MINIO_PASS']))
           " > "$tmp"

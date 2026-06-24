@@ -10,22 +10,24 @@ kafka:
   nodeId: 1
   storage:
     size: 5Gi
+  # External SASL/OAUTHBEARER listener. Partners (e.g. Maggioli) connect here
+  # with a Keycloak token. advertisedHost:nodePort must be reachable by them.
+  external:
+    advertisedHost: "147.102.6.143"
+    nodePort: 30094
   # Topic definitions — consumed by the post-install Job and by dependent services.
   # Add new topics here; the Job is idempotent (--if-not-exists).
   topics:
-    - name: dnavio.telemetry.raw
+    - name: dnavio.dml.telemetry.raw
       partitions: 1
       replicationFactor: 1
-    - name: dnavio.telemetry.processed
+    - name: dnavio.dml.telemetry.normalized
       partitions: 1
       replicationFactor: 1
-    - name: dnavio.alerts
+    - name: dnavio.frs.failures.reported
       partitions: 1
       replicationFactor: 1
-    - name: dnavio.failures
-      partitions: 1
-      replicationFactor: 1
-    - name: dnavio.risk
+    - name: dnavio.dml.deadletter
       partitions: 1
       replicationFactor: 1
 
@@ -33,9 +35,30 @@ keycloak:
   image:
     repository: quay.io/keycloak/keycloak
     tag: "26.1"
+  # Platform realm. Kafka derives its JWKS endpoint and expected issuer from this.
+  realm: d-navio
   adminUsername: admin
   # Set via --set keycloak.adminPassword=... in CI. Never commit a real value here.
   adminPassword: ""
+  # Pinned frontend URL. Keycloak stamps this as the `iss` claim on EVERY token,
+  # regardless of how it was requested (in-cluster, port-forward, or partner).
+  # Kafka validates tokens against "<hostname>/realms/<realm>". Must be reachable
+  # by external partners — set to the node's external address.
+  hostname: "http://147.102.6.143:30080"
+  service:
+    type: NodePort
+    nodePort: 30080
+  # Persist the H2 database so the realm + clients survive pod restarts.
+  storage:
+    size: 1Gi
+  clients:
+    # Confidential client used by D-NAVIO services and the Kafka scripts/Job to
+    # obtain tokens (client credentials grant). The realm-bootstrap Job reconciles
+    # this client's secret to the value below on every deploy.
+    # Set via --set keycloak.clients.dnavioApi.secret=... in CI. Never commit.
+    dnavioApi:
+      clientId: dnavio-api
+      secret: ""
 
 minio:
   image:

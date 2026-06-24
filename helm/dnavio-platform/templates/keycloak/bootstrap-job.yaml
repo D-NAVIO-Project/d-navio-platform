@@ -1,0 +1,94 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: keycloak-realm-bootstrap
+  labels:
+    {{- include "dnavio-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: keycloak-bootstrap
+  annotations:
+    # Runs after every install and upgrade; idempotent (creates-or-reconciles).
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "5"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 5
+  template:
+    metadata:
+      labels:
+        {{- include "dnavio-platform.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: keycloak-bootstrap
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: bootstrap
+          image: "{{ .Values.keycloak.image.repository }}:{{ .Values.keycloak.image.tag }}"
+          env:
+            - name: KC_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-credentials
+                  key: admin-username
+            - name: KC_ADMIN_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-credentials
+                  key: admin-password
+            - name: DNAVIO_API_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-client-secrets
+                  key: dnavio-api-secret
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -euo pipefail
+              KCADM=/opt/keycloak/bin/kcadm.sh
+              SERVER=http://keycloak:8080
+              REALM={{ .Values.keycloak.realm | quote }}
+              CLIENT_ID={{ .Values.keycloak.clients.dnavioApi.clientId | quote }}
+
+              # Wait for Keycloak to be reachable by attempting an admin login.
+              echo "Waiting for Keycloak admin API..."
+              until "$KCADM" config credentials --server "$SERVER" \
+                    --realm master --user "$KC_ADMIN_USER" --password "$KC_ADMIN_PASS" \
+                    >/dev/null 2>&1; do
+                echo "  not ready yet, retrying in 5s..."
+                sleep 5
+              done
+              echo "Authenticated to Keycloak."
+
+              # Ensure the platform realm exists.
+              if "$KCADM" get "realms/${REALM}" >/dev/null 2>&1; then
+                echo "Realm '${REALM}' already exists."
+              else
+                echo "Creating realm '${REALM}'."
+                "$KCADM" create realms -s realm="${REALM}" -s enabled=true
+              fi
+
+              # Ensure the confidential service-account client exists with a
+              # deterministic secret (create, or reconcile if already present).
+              CID=$("$KCADM" get clients -r "${REALM}" -q clientId="${CLIENT_ID}" \
+                    --fields id --format csv --noquotes 2>/dev/null | tail -n1 | tr -d '\r')
+              if [ -z "${CID}" ]; then
+                echo "Creating client '${CLIENT_ID}'."
+                "$KCADM" create clients -r "${REALM}" \
+                  -s clientId="${CLIENT_ID}" \
+                  -s enabled=true \
+                  -s publicClient=false \
+                  -s standardFlowEnabled=false \
+                  -s directAccessGrantsEnabled=false \
+                  -s serviceAccountsEnabled=true \
+                  -s secret="${DNAVIO_API_SECRET}"
+              else
+                echo "Reconciling client '${CLIENT_ID}' (${CID})."
+                "$KCADM" update "clients/${CID}" -r "${REALM}" \
+                  -s enabled=true \
+                  -s publicClient=false \
+                  -s standardFlowEnabled=false \
+                  -s directAccessGrantsEnabled=false \
+                  -s serviceAccountsEnabled=true \
+                  -s secret="${DNAVIO_API_SECRET}"
+              fi
+
+              echo "Keycloak realm bootstrap complete."

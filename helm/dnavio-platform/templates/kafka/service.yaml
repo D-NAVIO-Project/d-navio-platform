@@ -9,7 +9,8 @@ metadata:
 spec:
   type: ClusterIP
   ports:
-    - name: plaintext
+    # INTERNAL listener — SASL/OAUTHBEARER, in-cluster clients (kafka:9092).
+    - name: internal
       port: 9092
       targetPort: 9092
       protocol: TCP
