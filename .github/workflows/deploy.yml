@@ -22,6 +22,23 @@ jobs:
       - name: Set kubectl context
         run: kubectl config use-context kubernetes-admin@kubernetes
 
+      - name: Adopt pre-existing resources into Helm
+        run: |
+          NS=dnavio-dev
+          RELEASE=dnavio-platform
+          for kind in pvc deployment service secret statefulset; do
+            resources=$(kubectl get "$kind" -n "$NS" -o name 2>/dev/null || true)
+            for res in $resources; do
+              kubectl annotate "$res" -n "$NS" \
+                "meta.helm.sh/release-name=$RELEASE" \
+                "meta.helm.sh/release-namespace=$NS" \
+                --overwrite 2>/dev/null || true
+              kubectl label "$res" -n "$NS" \
+                "app.kubernetes.io/managed-by=Helm" \
+                --overwrite 2>/dev/null || true
+            done
+          done
+
       - name: Deploy to dnavio-dev
         env:
           KEYCLOAK_PASS: ${{ secrets.KEYCLOAK_ADMIN_PASSWORD }}
@@ -57,6 +74,23 @@ jobs:
       - name: Set kubectl context
         run: kubectl config use-context kubernetes-admin@kubernetes
 
+      - name: Adopt pre-existing resources into Helm
+        run: |
+          NS=dnavio-integration
+          RELEASE=dnavio-platform
+          for kind in pvc deployment service secret statefulset; do
+            resources=$(kubectl get "$kind" -n "$NS" -o name 2>/dev/null || true)
+            for res in $resources; do
+              kubectl annotate "$res" -n "$NS" \
+                "meta.helm.sh/release-name=$RELEASE" \
+                "meta.helm.sh/release-namespace=$NS" \
+                --overwrite 2>/dev/null || true
+              kubectl label "$res" -n "$NS" \
+                "app.kubernetes.io/managed-by=Helm" \
+                --overwrite 2>/dev/null || true
+            done
+          done
+
       - name: Deploy to dnavio-integration
         env:
           KEYCLOAK_PASS: ${{ secrets.KEYCLOAK_ADMIN_PASSWORD }}
@@ -91,6 +125,23 @@ jobs:
 
       - name: Set kubectl context
         run: kubectl config use-context kubernetes-admin@kubernetes
+
+      - name: Adopt pre-existing resources into Helm
+        run: |
+          NS=dnavio-pilot
+          RELEASE=dnavio-platform
+          for kind in pvc deployment service secret statefulset; do
+            resources=$(kubectl get "$kind" -n "$NS" -o name 2>/dev/null || true)
+            for res in $resources; do
+              kubectl annotate "$res" -n "$NS" \
+                "meta.helm.sh/release-name=$RELEASE" \
+                "meta.helm.sh/release-namespace=$NS" \
+                --overwrite 2>/dev/null || true
+              kubectl label "$res" -n "$NS" \
+                "app.kubernetes.io/managed-by=Helm" \
+                --overwrite 2>/dev/null || true
+            done
+          done
 
       - name: Deploy to dnavio-pilot
         env:
