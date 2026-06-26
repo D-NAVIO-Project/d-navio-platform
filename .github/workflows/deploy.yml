@@ -17,6 +17,7 @@ jobs:
     runs-on: [self-hosted, dnavio-vm]
     environment: dev
     permissions:
+      contents: read
       packages: read
     steps:
       - uses: actions/checkout@v4
@@ -80,6 +81,7 @@ jobs:
     runs-on: [self-hosted, dnavio-vm]
     environment: integration
     permissions:
+      contents: read
       packages: read
     steps:
       - uses: actions/checkout@v4
@@ -143,6 +145,7 @@ jobs:
     runs-on: [self-hosted, dnavio-vm]
     environment: pilot
     permissions:
+      contents: read
       packages: read
     steps:
       - uses: actions/checkout@v4
