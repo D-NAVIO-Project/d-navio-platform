@@ -73,4 +73,4 @@ minio:
 testProducer:
   enabled: false
   image: ghcr.io/d-navio-project/test-producer:latest
-  topic: dnavio.telemetry.raw
+  topic: dnavio.dml.telemetry.raw
