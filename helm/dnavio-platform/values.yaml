@@ -69,3 +69,8 @@ minio:
   rootPassword: ""
   storage:
     size: 10Gi
+
+testProducer:
+  enabled: false
+  image: ghcr.io/d-navio-project/test-producer:latest
+  topic: dnavio.telemetry.raw

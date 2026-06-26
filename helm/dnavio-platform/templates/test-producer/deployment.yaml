@@ -1,0 +1,38 @@
+{{- if .Values.testProducer.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-producer
+  labels:
+    {{- include "dnavio-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: test-producer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "dnavio-platform.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: test-producer
+  template:
+    metadata:
+      labels:
+        {{- include "dnavio-platform.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: test-producer
+    spec:
+      containers:
+        - name: test-producer
+          image: "{{ .Values.testProducer.image }}"
+          ports:
+            - containerPort: 8000
+              protocol: TCP
+          env:
+            - name: KAFKA_BOOTSTRAP
+              value: "kafka:9092"
+            - name: KAFKA_TOPIC
+              value: {{ .Values.testProducer.topic | quote }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+{{- end }}
