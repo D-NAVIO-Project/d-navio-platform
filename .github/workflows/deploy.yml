@@ -47,6 +47,19 @@ jobs:
               -n "$NS" --ignore-not-found --timeout=90s || true
           fi
 
+      - name: Unlock stuck Helm release
+        run: |
+          NS=dnavio-dev
+          RELEASE=dnavio-platform
+          STATUS=$(helm status "$RELEASE" -n "$NS" -o json 2>/dev/null \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['info']['status'])" 2>/dev/null || echo "not-found")
+          echo "Helm release status: $STATUS"
+          if [[ "$STATUS" == "pending-install" ]]; then
+            helm uninstall "$RELEASE" -n "$NS" || true
+          elif [[ "$STATUS" == "pending-upgrade" || "$STATUS" == "pending-rollback" ]]; then
+            helm rollback "$RELEASE" -n "$NS" || true
+          fi
+
       - name: Deploy to dnavio-dev
         env:
           KEYCLOAK_PASS: ${{ secrets.KEYCLOAK_ADMIN_PASSWORD }}
@@ -111,6 +124,19 @@ jobs:
               -n "$NS" --ignore-not-found --timeout=90s || true
           fi
 
+      - name: Unlock stuck Helm release
+        run: |
+          NS=dnavio-integration
+          RELEASE=dnavio-platform
+          STATUS=$(helm status "$RELEASE" -n "$NS" -o json 2>/dev/null \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['info']['status'])" 2>/dev/null || echo "not-found")
+          echo "Helm release status: $STATUS"
+          if [[ "$STATUS" == "pending-install" ]]; then
+            helm uninstall "$RELEASE" -n "$NS" || true
+          elif [[ "$STATUS" == "pending-upgrade" || "$STATUS" == "pending-rollback" ]]; then
+            helm rollback "$RELEASE" -n "$NS" || true
+          fi
+
       - name: Deploy to dnavio-integration
         env:
           KEYCLOAK_PASS: ${{ secrets.KEYCLOAK_ADMIN_PASSWORD }}
@@ -173,6 +199,19 @@ jobs:
               -n "$NS" --ignore-not-found --timeout=90s || true
             kubectl delete pvc kafka-data minio-data \
               -n "$NS" --ignore-not-found --timeout=90s || true
+          fi
+
+      - name: Unlock stuck Helm release
+        run: |
+          NS=dnavio-pilot
+          RELEASE=dnavio-platform
+          STATUS=$(helm status "$RELEASE" -n "$NS" -o json 2>/dev/null \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['info']['status'])" 2>/dev/null || echo "not-found")
+          echo "Helm release status: $STATUS"
+          if [[ "$STATUS" == "pending-install" ]]; then
+            helm uninstall "$RELEASE" -n "$NS" || true
+          elif [[ "$STATUS" == "pending-upgrade" || "$STATUS" == "pending-rollback" ]]; then
+            helm rollback "$RELEASE" -n "$NS" || true
           fi
 
       - name: Deploy to dnavio-pilot
