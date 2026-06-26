@@ -22,13 +22,22 @@ jobs:
       - name: Set kubectl context
         run: kubectl config use-context kubernetes-admin@kubernetes
 
+      - name: Create ghcr image pull secret
+        env:
+          GHCR_PAT: ${{ secrets.GHCR_PAT }}
+        run: |
+          kubectl create namespace dnavio-dev --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create secret docker-registry ghcr-pull-secret \
+            --docker-server=ghcr.io \
+            --docker-username=${{ github.repository_owner }} \
+            --docker-password="$GHCR_PAT" \
+            --namespace=dnavio-dev \
+            --dry-run=client -o yaml | kubectl apply -f -
+
       - name: Migrate manually-applied resources to Helm
         run: |
           NS=dnavio-dev
           RELEASE=dnavio-platform
-          # Only on first install: remove kompose-generated resources whose selectors
-          # and PVC specs conflict with what Helm expects. After a successful Helm
-          # install these resources are Helm-managed and this block is skipped.
           if ! helm status "$RELEASE" -n "$NS" > /dev/null 2>&1; then
             echo "No Helm release found — removing manually-applied resources before install"
             kubectl delete deployment kafka keycloak minio \
@@ -75,6 +84,18 @@ jobs:
 
       - name: Set kubectl context
         run: kubectl config use-context kubernetes-admin@kubernetes
+
+      - name: Create ghcr image pull secret
+        env:
+          GHCR_PAT: ${{ secrets.GHCR_PAT }}
+        run: |
+          kubectl create namespace dnavio-integration --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create secret docker-registry ghcr-pull-secret \
+            --docker-server=ghcr.io \
+            --docker-username=${{ github.repository_owner }} \
+            --docker-password="$GHCR_PAT" \
+            --namespace=dnavio-integration \
+            --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Migrate manually-applied resources to Helm
         run: |
@@ -126,6 +147,18 @@ jobs:
 
       - name: Set kubectl context
         run: kubectl config use-context kubernetes-admin@kubernetes
+
+      - name: Create ghcr image pull secret
+        env:
+          GHCR_PAT: ${{ secrets.GHCR_PAT }}
+        run: |
+          kubectl create namespace dnavio-pilot --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create secret docker-registry ghcr-pull-secret \
+            --docker-server=ghcr.io \
+            --docker-username=${{ github.repository_owner }} \
+            --docker-password="$GHCR_PAT" \
+            --namespace=dnavio-pilot \
+            --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Migrate manually-applied resources to Helm
         run: |
