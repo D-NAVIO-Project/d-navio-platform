@@ -73,4 +73,5 @@ minio:
 testProducer:
   enabled: false
   image: ghcr.io/d-navio-project/test-producer:latest
+  imagePullPolicy: IfNotPresent
   topic: dnavio.dml.telemetry.raw
