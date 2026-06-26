@@ -29,6 +29,17 @@ spec:
               value: "kafka:9092"
             - name: KAFKA_TOPIC
               value: {{ .Values.testProducer.topic | quote }}
+            - name: KEYCLOAK_URL
+              value: "http://keycloak:8080"
+            - name: KEYCLOAK_REALM
+              value: {{ .Values.keycloak.realm | quote }}
+            - name: KEYCLOAK_CLIENT_ID
+              value: {{ .Values.keycloak.clients.dnavioApi.clientId | quote }}
+            - name: KEYCLOAK_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-client-secrets
+                  key: dnavio-api-secret
           readinessProbe:
             httpGet:
               path: /health
