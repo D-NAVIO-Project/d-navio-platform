@@ -1,18 +1,24 @@
 # Integration / test environment overrides.
+# Distinct NodePorts from dev/pilot — all three share the same VM node.
+keycloak:
+  hostname: "http://147.102.6.143:31080"
+  service:
+    nodePort: 31080
+
 kafka:
+  external:
+    advertisedHost: "147.102.6.143"
+    nodePort: 31094
   topics:
-    - name: dnavio.telemetry.raw
+    - name: dnavio.dml.telemetry.raw
       partitions: 2
       replicationFactor: 1
-    - name: dnavio.telemetry.processed
+    - name: dnavio.dml.telemetry.normalized
       partitions: 2
       replicationFactor: 1
-    - name: dnavio.alerts
+    - name: dnavio.frs.failures.reported
       partitions: 1
       replicationFactor: 1
-    - name: dnavio.failures
-      partitions: 1
-      replicationFactor: 1
-    - name: dnavio.risk
+    - name: dnavio.dml.deadletter
       partitions: 1
       replicationFactor: 1

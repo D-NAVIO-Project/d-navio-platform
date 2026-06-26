@@ -115,5 +115,7 @@ jobs:
           test -f docs/install-docker.md
           test -f docs/install-k8s.md
           test -f docs/kafka-guide.md
+          test -f docs/keycloak-guide.md
           test -f docs/operations/service-health-checks.md
           test -f docs/operations/ci-bootstrap.md
+          test -f docs/operations/kafka-auth.md

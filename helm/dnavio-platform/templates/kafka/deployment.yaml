@@ -26,8 +26,11 @@ spec:
         - name: kafka
           image: "{{ .Values.kafka.image.repository }}:{{ .Values.kafka.image.tag }}"
           ports:
-            - name: plaintext
+            - name: internal
               containerPort: 9092
+              protocol: TCP
+            - name: external
+              containerPort: 9094
               protocol: TCP
           env:
             - name: KAFKA_KRAFT_MODE
@@ -42,10 +45,40 @@ spec:
               value: "1@localhost:9093"
             - name: KAFKA_CONTROLLER_LISTENER_NAMES
               value: CONTROLLER
+            # Four listeners:
+            #   BROKER     loopback PLAINTEXT — inter-broker only (broker-to-self)
+            #   INTERNAL   SASL/OAUTHBEARER   — in-cluster D-NAVIO services
+            #   EXTERNAL   SASL/OAUTHBEARER   — partners via NodePort
+            #   CONTROLLER loopback PLAINTEXT — KRaft quorum, single node
             - name: KAFKA_LISTENERS
-              value: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093"
+              value: "BROKER://127.0.0.1:9091,INTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:9094"
             - name: KAFKA_ADVERTISED_LISTENERS
-              value: "PLAINTEXT://kafka:9092"
+              value: "BROKER://127.0.0.1:9091,INTERNAL://kafka:9092,EXTERNAL://{{ .Values.kafka.external.advertisedHost }}:{{ .Values.kafka.external.nodePort }}"
+            - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+              value: "BROKER:PLAINTEXT,INTERNAL:SASL_PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:SASL_PLAINTEXT"
+            - name: KAFKA_INTER_BROKER_LISTENER_NAME
+              value: "BROKER"
+            # OAUTHBEARER (OIDC): validate every client token against Keycloak.
+            # JWKS is fetched in-cluster; the issuer must match the pinned hostname.
+            - name: KAFKA_SASL_ENABLED_MECHANISMS
+              value: "OAUTHBEARER"
+            - name: KAFKA_SASL_OAUTHBEARER_JWKS_ENDPOINT_URL
+              value: "http://keycloak:8080/realms/{{ .Values.keycloak.realm }}/protocol/openid-connect/certs"
+            - name: KAFKA_SASL_OAUTHBEARER_EXPECTED_ISSUER
+              value: "{{ .Values.keycloak.hostname }}/realms/{{ .Values.keycloak.realm }}"
+            # Keycloak stamps aud=account by default; jose4j requires the expected
+            # audience to be declared when an aud claim is present. (A dedicated
+            # "kafka" audience mapper is a future authorization hardening step.)
+            - name: KAFKA_SASL_OAUTHBEARER_EXPECTED_AUDIENCE
+              value: "account"
+            - name: KAFKA_LISTENER_NAME_INTERNAL_OAUTHBEARER_SASL_SERVER_CALLBACK_HANDLER_CLASS
+              value: "org.apache.kafka.common.security.oauthbearer.secured.OAuthBearerValidatorCallbackHandler"
+            - name: KAFKA_LISTENER_NAME_EXTERNAL_OAUTHBEARER_SASL_SERVER_CALLBACK_HANDLER_CLASS
+              value: "org.apache.kafka.common.security.oauthbearer.secured.OAuthBearerValidatorCallbackHandler"
+            - name: KAFKA_LISTENER_NAME_INTERNAL_OAUTHBEARER_SASL_JAAS_CONFIG
+              value: "org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required ;"
+            - name: KAFKA_LISTENER_NAME_EXTERNAL_OAUTHBEARER_SASL_JAAS_CONFIG
+              value: "org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required ;"
             - name: KAFKA_LOG_DIRS
               value: /var/lib/kafka/data/kraft-combined-logs
             - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR

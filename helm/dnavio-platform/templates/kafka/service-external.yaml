@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Service
+metadata:
+  # External access for partners (e.g. Maggioli) via NodePort.
+  # The broker advertises this listener as advertisedHost:nodePort, so the
+  # NodePort number MUST match kafka.external.nodePort.
+  name: kafka-external
+  labels:
+    {{- include "dnavio-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kafka
+spec:
+  type: NodePort
+  ports:
+    # EXTERNAL listener — SASL/OAUTHBEARER, partner clients.
+    - name: external
+      port: 9094
+      targetPort: 9094
+      nodePort: {{ .Values.kafka.external.nodePort }}
+      protocol: TCP
+  selector:
+    {{- include "dnavio-platform.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: kafka

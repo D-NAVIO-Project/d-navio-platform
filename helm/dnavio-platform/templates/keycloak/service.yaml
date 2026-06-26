@@ -6,12 +6,17 @@ metadata:
     {{- include "dnavio-platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: keycloak
 spec:
-  type: ClusterIP
+  # NodePort in dev so partners can reach Keycloak for token retrieval.
+  # ClusterIP name (keycloak:8080) still works for in-cluster clients.
+  type: {{ .Values.keycloak.service.type }}
   ports:
     - name: http
       port: 8080
       targetPort: 8080
       protocol: TCP
+      {{- if eq .Values.keycloak.service.type "NodePort" }}
+      nodePort: {{ .Values.keycloak.service.nodePort }}
+      {{- end }}
   selector:
     {{- include "dnavio-platform.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: keycloak

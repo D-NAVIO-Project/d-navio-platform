@@ -6,3 +6,6 @@ kafka:
 minio:
   storage:
     size: 5Gi
+
+testProducer:
+  enabled: true

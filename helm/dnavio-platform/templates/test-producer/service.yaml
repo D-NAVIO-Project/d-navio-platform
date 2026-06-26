@@ -1,0 +1,19 @@
+{{- if .Values.testProducer.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-producer
+  labels:
+    {{- include "dnavio-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: test-producer
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      protocol: TCP
+  selector:
+    {{- include "dnavio-platform.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: test-producer
+{{- end }}

@@ -11,6 +11,9 @@ spec:
     matchLabels:
       {{- include "dnavio-platform.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: keycloak
+  strategy:
+    # RWO volume — old pod must release it before the new one mounts.
+    type: Recreate
   template:
     metadata:
       labels:
@@ -30,6 +33,14 @@ spec:
               containerPort: 8080
               protocol: TCP
           env:
+            # Pin the frontend URL so every issued token carries a stable `iss`
+            # claim. The pod still listens on 8080; this only sets advertised URLs.
+            - name: KC_HOSTNAME
+              value: {{ .Values.keycloak.hostname | quote }}
+            # Allow in-cluster clients to reach the token endpoint via keycloak:8080
+            # while still stamping iss = KC_HOSTNAME on the tokens they receive.
+            - name: KC_HOSTNAME_BACKCHANNEL_DYNAMIC
+              value: "true"
             - name: KC_BOOTSTRAP_ADMIN_USERNAME
               valueFrom:
                 secretKeyRef:
@@ -40,3 +51,11 @@ spec:
                 secretKeyRef:
                   name: keycloak-credentials
                   key: admin-password
+          volumeMounts:
+            # Persist the H2 database so the realm + clients survive restarts.
+            - name: keycloak-data
+              mountPath: /opt/keycloak/data
+      volumes:
+        - name: keycloak-data
+          persistentVolumeClaim:
+            claimName: keycloak-data
