@@ -70,10 +70,13 @@ jobs:
             --namespace dnavio-dev \
             --create-namespace \
             -f helm/dnavio-platform/values-dev.yaml \
-            -f "$tmp" \
-            --wait \
-            --timeout 10m \
-            --atomic
+            -f "$tmp"
+          kubectl rollout status deployment/keycloak -n dnavio-dev --timeout=5m
+          kubectl rollout status deployment/minio -n dnavio-dev --timeout=3m
+          kubectl wait --for=condition=complete job \
+            -l app.kubernetes.io/component=keycloak-bootstrap \
+            -n dnavio-dev --timeout=10m
+          kubectl rollout status deployment/kafka -n dnavio-dev --timeout=10m
 
   deploy-integration:
     name: Deploy → integration
@@ -135,10 +138,13 @@ jobs:
             --namespace dnavio-integration \
             --create-namespace \
             -f helm/dnavio-platform/values-integration.yaml \
-            -f "$tmp" \
-            --wait \
-            --timeout 10m \
-            --atomic
+            -f "$tmp"
+          kubectl rollout status deployment/keycloak -n dnavio-integration --timeout=5m
+          kubectl rollout status deployment/minio -n dnavio-integration --timeout=3m
+          kubectl wait --for=condition=complete job \
+            -l app.kubernetes.io/component=keycloak-bootstrap \
+            -n dnavio-integration --timeout=10m
+          kubectl rollout status deployment/kafka -n dnavio-integration --timeout=10m
 
   deploy-pilot:
     name: Deploy → pilot
@@ -200,7 +206,10 @@ jobs:
             --namespace dnavio-pilot \
             --create-namespace \
             -f helm/dnavio-platform/values-pilot.yaml \
-            -f "$tmp" \
-            --wait \
-            --timeout 10m \
-            --atomic
+            -f "$tmp"
+          kubectl rollout status deployment/keycloak -n dnavio-pilot --timeout=5m
+          kubectl rollout status deployment/minio -n dnavio-pilot --timeout=3m
+          kubectl wait --for=condition=complete job \
+            -l app.kubernetes.io/component=keycloak-bootstrap \
+            -n dnavio-pilot --timeout=10m
+          kubectl rollout status deployment/kafka -n dnavio-pilot --timeout=10m

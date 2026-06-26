@@ -22,6 +22,19 @@ spec:
       hostname: kafka
       enableServiceLinks: false
       restartPolicy: Always
+      initContainers:
+        - name: wait-for-keycloak-realm
+          image: curlimages/curl:8.11.0
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              JWKS="http://keycloak:8080/realms/{{ .Values.keycloak.realm }}/protocol/openid-connect/certs"
+              echo "Waiting for Keycloak realm '{{ .Values.keycloak.realm }}' JWKS endpoint..."
+              until curl -sf "$JWKS" > /dev/null; do
+                echo "  not ready, retrying in 10s..."
+                sleep 10
+              done
+              echo "JWKS endpoint is available — starting Kafka."
       containers:
         - name: kafka
           image: "{{ .Values.kafka.image.repository }}:{{ .Values.kafka.image.tag }}"
