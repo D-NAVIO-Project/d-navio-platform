@@ -100,6 +100,14 @@ spec:
               value: "1"
             - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
               value: "1"
+            - name: KAFKA_HEAP_OPTS
+              value: "-Xms256m -Xmx512m"
+          resources:
+            requests:
+              memory: "384Mi"
+              cpu: "100m"
+            limits:
+              memory: "640Mi"
           volumeMounts:
             - name: kafka-data
               mountPath: /var/lib/kafka/data

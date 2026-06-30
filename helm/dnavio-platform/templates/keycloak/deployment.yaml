@@ -51,6 +51,14 @@ spec:
                 secretKeyRef:
                   name: keycloak-credentials
                   key: admin-password
+            - name: JAVA_OPTS_APPEND
+              value: "-Xms128m -Xmx512m"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "600Mi"
           volumeMounts:
             # Persist the H2 database so the realm + clients survive restarts.
             - name: keycloak-data
