@@ -52,7 +52,7 @@ spec:
                   name: keycloak-credentials
                   key: admin-password
             - name: JAVA_OPTS_APPEND
-              value: "-Xms128m -Xmx512m"
+              value: "-Xms128m -Xmx512m -XX:MaxMetaspaceSize=192m"
           resources:
             requests:
               memory: "256Mi"
