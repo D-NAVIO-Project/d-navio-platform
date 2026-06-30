@@ -9,7 +9,7 @@ Before writing any code, contact the D-NAVIO team and request the following:
 
 | Item | Description |
 |------|-------------|
-| **Client ID** | A unique identifier for your application (e.g. `partner-maggioli`) |
+| **Client ID** | A unique identifier for your application (e.g. `partner-ntua`) |
 | **Client Secret** | A secret credential paired with your Client ID |
 | **Topic list** | The specific Kafka topics you are authorized to produce to or consume from |
 
