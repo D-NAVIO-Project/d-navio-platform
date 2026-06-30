@@ -52,13 +52,13 @@ spec:
                   name: keycloak-credentials
                   key: admin-password
             - name: JAVA_OPTS_APPEND
-              value: "-Xms128m -Xmx512m -XX:MaxMetaspaceSize=192m"
+              value: "-Xms128m -Xmx384m -XX:MaxMetaspaceSize=192m"
           resources:
             requests:
-              memory: "256Mi"
+              memory: "384Mi"
               cpu: "100m"
             limits:
-              memory: "600Mi"
+              memory: "768Mi"
           volumeMounts:
             # Persist the H2 database so the realm + clients survive restarts.
             - name: keycloak-data
