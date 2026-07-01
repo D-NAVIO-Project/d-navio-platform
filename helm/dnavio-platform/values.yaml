@@ -69,9 +69,3 @@ minio:
   rootPassword: ""
   storage:
     size: 10Gi
-
-testProducer:
-  enabled: false
-  image: test-producer:latest
-  imagePullPolicy: Never
-  topic: dnavio.dml.telemetry.raw
