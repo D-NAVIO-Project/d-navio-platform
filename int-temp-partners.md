@@ -1,11 +1,11 @@
 # D-NAVIO Kafka Integration Guide for Partners
 
-This guide explains how to connect your application to the D-NAVIO message broker and what you need to request from the D-NAVIO team before getting started.
+This guide explains how to connect your application to the message broker and what you need to request from the D-NAVIO team before getting started.
 
 
-## 1. What to Request from D-NAVIO
+## 1. What to Request from NTUA
 
-Before writing any code, contact the D-NAVIO team and request the following:
+Before writing any code, contact the NTUA team and request the following:
 
 | Item | Description |
 |------|-------------|
@@ -13,7 +13,7 @@ Before writing any code, contact the D-NAVIO team and request the following:
 | **Client Secret** | A secret credential paired with your Client ID |
 | **Topic list** | The specific Kafka topics you are authorized to produce to or consume from |
 
-These credentials are created in D-NAVIO's identity provider (Keycloak) and are specific to your application. Do not share them.
+These credentials are created in the identity provider (Keycloak) and are specific to your application. Do not share them.
 
 
 ## 2. Connection Details
@@ -48,7 +48,7 @@ Tokens expire (default: 5 minutes). The libraries below handle refresh automatic
 | `dnavio.frs.failures.reported` | Failure reports |
 | `dnavio.dml.deadletter` | Unprocessable messages |
 
-Access to specific topics is granted per client. Confirm with the D-NAVIO team which topics your client is authorized to use.
+Access to specific topics is granted per client. Confirm with the NTUA team which topics your client is authorized to use.
 
 
 ## 4. Notes and Constraints
@@ -61,7 +61,7 @@ Access to specific topics is granted per client. Confirm with the D-NAVIO team w
 
 ## 5. Onboarding Checklist
 
-Before going live, confirm the following with the D-NAVIO team:
+Before going live, confirm the following with the NTUA team:
 
 - [ ] Client ID and Client Secret received
 - [ ] Topics you need access to have been confirmed
@@ -71,4 +71,4 @@ Before going live, confirm the following with the D-NAVIO team:
 
 ---
 
-*For questions or access requests, contact the D-NAVIO platform team.*
+*For questions or access requests, contact the NTUA platform team.*
