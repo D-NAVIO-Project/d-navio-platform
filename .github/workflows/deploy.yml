@@ -5,6 +5,7 @@ on:
     workflows: ["Validate"]
     types: [completed]
     branches: [main]
+  workflow_dispatch:
 
 defaults:
   run:
