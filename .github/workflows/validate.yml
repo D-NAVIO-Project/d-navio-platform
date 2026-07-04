@@ -119,3 +119,4 @@ jobs:
           test -f docs/operations/service-health-checks.md
           test -f docs/operations/ci-bootstrap.md
           test -f docs/operations/kafka-auth.md
+          test -f docs/operations/rbac-access-model.md
