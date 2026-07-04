@@ -75,6 +75,7 @@ spec:
                 "$KCADM" create clients -r "${REALM}" \
                   -s clientId="${CLIENT_ID}" \
                   -s enabled=true \
+                  -s protocol=openid-connect \
                   -s publicClient=false \
                   -s standardFlowEnabled=false \
                   -s directAccessGrantsEnabled=false \
@@ -84,6 +85,7 @@ spec:
                 echo "Reconciling client '${CLIENT_ID}' (${CID})."
                 "$KCADM" update "clients/${CID}" -r "${REALM}" \
                   -s enabled=true \
+                  -s protocol=openid-connect \
                   -s publicClient=false \
                   -s standardFlowEnabled=false \
                   -s directAccessGrantsEnabled=false \
@@ -91,26 +93,51 @@ spec:
                   -s secret="${DNAVIO_API_SECRET}"
               fi
 
-              # Ensure platform realm roles exist (create, or reconcile the
-              # description if already present).
-              {{- range .Values.keycloak.roles }}
-              if "$KCADM" get "roles/{{ .name }}" -r "${REALM}" >/dev/null 2>&1; then
-                echo "Role '{{ .name }}' already exists - reconciling."
-                "$KCADM" update "roles/{{ .name }}" -r "${REALM}" \
-                  -s 'description={{ .description }}'
-              else
-                echo "Creating role '{{ .name }}'."
-                "$KCADM" create roles -r "${REALM}" \
-                  -s 'name={{ .name }}' \
-                  -s 'description={{ .description }}'
-              fi
-              {{- end }}
+              # --- RBAC identities (feat/rbac-access-model) ---
+              # Component service accounts. Created without a fixed secret —
+              # Keycloak generates one, retrieved/rotated when the component
+              # onboards. ACL enforcement is NOT enabled yet (authn-only broker).
+              ensure_service_client() {
+                local cid="$1" existing
+                existing=$("$KCADM" get clients -r "${REALM}" -q clientId="${cid}" \
+                  --fields id --format csv --noquotes 2>/dev/null | tail -n1 | tr -d '\r')
+                if [ -z "${existing}" ]; then
+                  echo "Creating service-account client '${cid}'."
+                  "$KCADM" create clients -r "${REALM}" \
+                    -s clientId="${cid}" \
+                    -s enabled=true \
+                    -s protocol=openid-connect \
+                    -s publicClient=false \
+                    -s standardFlowEnabled=false \
+                    -s directAccessGrantsEnabled=false \
+                    -s serviceAccountsEnabled=true
+                else
+                  echo "Reconciling service-account client '${cid}' (${existing})."
+                  "$KCADM" update "clients/${existing}" -r "${REALM}" \
+                    -s enabled=true \
+                    -s protocol=openid-connect \
+                    -s publicClient=false \
+                    -s standardFlowEnabled=false \
+                    -s directAccessGrantsEnabled=false \
+                    -s serviceAccountsEnabled=true
+                fi
+              }
 
-              # Grant the platform service account its realm role. add-roles is
-              # idempotent: re-granting an already-held role is a no-op.
-              echo "Granting role '{{ .Values.keycloak.clients.dnavioApi.role }}' to service account of '${CLIENT_ID}'."
-              "$KCADM" add-roles -r "${REALM}" \
-                --uusername "service-account-${CLIENT_ID}" \
-                --rolename "{{ .Values.keycloak.clients.dnavioApi.role }}"
+              ensure_realm_role() {
+                local role="$1"
+                if "$KCADM" get "roles/${role}" -r "${REALM}" >/dev/null 2>&1; then
+                  echo "Realm role '${role}' already exists."
+                else
+                  echo "Creating realm role '${role}'."
+                  "$KCADM" create roles -r "${REALM}" -s name="${role}"
+                fi
+              }
+
+              for c in svc-dml svc-frs svc-dynamo; do
+                ensure_service_client "$c"
+              done
+              for r in operator analyst integrator admin; do
+                ensure_realm_role "$r"
+              done
 
               echo "Keycloak realm bootstrap complete."
