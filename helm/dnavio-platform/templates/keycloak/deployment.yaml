@@ -27,10 +27,15 @@ spec:
           args:
             - start-dev
             - --http-enabled=true
+            - --https-certificate-file=/etc/dnavio-tls/tls.crt
+            - --https-certificate-key-file=/etc/dnavio-tls/tls.key
             - --hostname-strict=false
           ports:
             - name: http
               containerPort: 8080
+              protocol: TCP
+            - name: https
+              containerPort: 8443
               protocol: TCP
           env:
             # Pin the frontend URL so every issued token carries a stable `iss`
@@ -55,7 +60,14 @@ spec:
             # Persist the H2 database so the realm + clients survive restarts.
             - name: keycloak-data
               mountPath: /opt/keycloak/data
+            # Server cert/key for HTTPS (external/partner token retrieval).
+            - name: dnavio-tls
+              mountPath: /etc/dnavio-tls
+              readOnly: true
       volumes:
         - name: keycloak-data
           persistentVolumeClaim:
             claimName: keycloak-data
+        - name: dnavio-tls
+          secret:
+            secretName: {{ .Values.tls.secretName }}

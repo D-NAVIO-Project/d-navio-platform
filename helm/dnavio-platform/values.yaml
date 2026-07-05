@@ -1,6 +1,12 @@
 # Default values for dnavio-platform.
 # Override per environment with values-<env>.yaml.
 
+# TLS material for Keycloak HTTPS and the Kafka EXTERNAL listener. The Secret
+# must exist in the target namespace before deploying — see
+# scripts/tls/generate-dev-cert.sh (self-signed dev CA, one per namespace).
+tls:
+  secretName: dnavio-tls
+
 kafka:
   image:
     repository: confluentinc/cp-kafka
@@ -42,12 +48,16 @@ keycloak:
   adminPassword: ""
   # Pinned frontend URL. Keycloak stamps this as the `iss` claim on EVERY token,
   # regardless of how it was requested (in-cluster, port-forward, or partner).
-  # Kafka validates tokens against "<hostname>/realms/<realm>". Must be reachable
-  # by external partners — set to the node's external address.
-  hostname: "http://147.102.6.143:30080"
+  # Kafka validates tokens against "<hostname>/realms/<realm>" — the SAME value,
+  # so issuer + expected-issuer never drift. Must be reachable by external
+  # partners; HTTPS so partner credentials are not sent in cleartext.
+  hostname: "https://147.102.6.143:30443"
   service:
     type: NodePort
     nodePort: 30080
+    # HTTPS port for external/partner token retrieval (client secrets are
+    # POSTed here, so this is the more sensitive of the two ports).
+    httpsNodePort: 30443
   # Persist the H2 database so the realm + clients survive pod restarts.
   storage:
     size: 1Gi
