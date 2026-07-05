@@ -20,15 +20,18 @@ The broker exposes four listeners:
 | `BROKER` | `127.0.0.1:9091` | PLAINTEXT | no (loopback) | inter-broker (broker-to-self) |
 | `CONTROLLER` | `127.0.0.1:9093` | PLAINTEXT | no (loopback) | KRaft quorum (single node) |
 | `INTERNAL` | `0.0.0.0:9092` | SASL_PLAINTEXT / OAUTHBEARER | `kafka:9092` (ClusterIP) | in-cluster services |
-| `EXTERNAL` | `0.0.0.0:9094` | SASL_PLAINTEXT / OAUTHBEARER | `147.102.6.143:30094` (NodePort) | external partners |
+| `EXTERNAL` | `0.0.0.0:9094` | **SASL_SSL** / OAUTHBEARER | `147.102.6.143:30094` (NodePort) | external partners |
 
 The two loopback listeners are PLAINTEXT because they are not a network security
 boundary — they only carry the broker talking to itself inside the pod. Every
 listener a *client* can reach (`INTERNAL`, `EXTERNAL`) requires a token.
 
-> Encryption note: listeners are `SASL_PLAINTEXT`, so tokens are authenticated
-> but not encrypted in transit. TLS (`SASL_SSL`) is deferred to
-> `feat/secrets-management`.
+> Encryption note: the **EXTERNAL** listener is `SASL_SSL` — partner tokens are
+> encrypted in transit via a TLS server certificate (self-signed dev CA; see
+> [keycloak-guide.md](../keycloak-guide.md#tls)). The **INTERNAL** listener stays
+> `SASL_PLAINTEXT`: it is only reachable on the trusted in-cluster network, so
+> tokens there are authenticated but not encrypted. A production CA-issued
+> certificate is a `feat/secrets-management` follow-up.
 
 ## Token Flow
 
@@ -48,7 +51,7 @@ Access granted / "invalid_token"
 The broker is configured with:
 
 - `KAFKA_SASL_OAUTHBEARER_JWKS_ENDPOINT_URL` → `http://keycloak:8080/realms/d-navio/protocol/openid-connect/certs` (in-cluster backchannel)
-- `KAFKA_SASL_OAUTHBEARER_EXPECTED_ISSUER` → `http://147.102.6.143:30080/realms/d-navio` (the pinned Keycloak hostname)
+- `KAFKA_SASL_OAUTHBEARER_EXPECTED_ISSUER` → `https://147.102.6.143:30443/realms/d-navio` (the pinned Keycloak hostname)
 - `KAFKA_SASL_OAUTHBEARER_EXPECTED_AUDIENCE` → `account` (Keycloak's default audience)
 
 The expected issuer must equal Keycloak's `KC_HOSTNAME` + `/realms/d-navio`. See
@@ -56,30 +59,41 @@ The expected issuer must equal Keycloak's `KC_HOSTNAME` + `/realms/d-navio`. See
 
 ## Client Configuration
 
-Any Kafka client needs these properties (`client.properties`):
+The listener a client connects to determines the security protocol: the INTERNAL
+listener is `SASL_PLAINTEXT`, the EXTERNAL listener is `SASL_SSL`.
+
+### In-cluster service (INTERNAL, SASL_PLAINTEXT)
 
 ```properties
 security.protocol=SASL_PLAINTEXT
 sasl.mechanism=OAUTHBEARER
 sasl.login.callback.handler.class=org.apache.kafka.common.security.oauthbearer.secured.OAuthBearerLoginCallbackHandler
-sasl.oauthbearer.token.endpoint.url=<keycloak-token-endpoint>
+sasl.oauthbearer.token.endpoint.url=http://keycloak:8080/realms/d-navio/protocol/openid-connect/token
 sasl.jaas.config=org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required clientId="<client>" clientSecret="<secret>" ;
 ```
 
-### In-cluster service
-
 - `bootstrap.servers=kafka:9092`
-- `token.endpoint.url=http://keycloak:8080/realms/d-navio/protocol/openid-connect/token`
 - client `dnavio-api`, secret from the `keycloak-client-secrets` Secret
 
 The D-NAVIO Kafka scripts (`scripts/kafka/*.sh`) build exactly this config via
 `scripts/kafka/lib.sh`, reading the secret from the cluster.
 
-### External partner (e.g. Maggioli)
+### External partner, e.g. Maggioli (EXTERNAL, SASL_SSL)
+
+```properties
+security.protocol=SASL_SSL
+ssl.truststore.type=PEM
+ssl.truststore.location=/path/to/dnavio-dev-ca.crt
+sasl.mechanism=OAUTHBEARER
+sasl.login.callback.handler.class=org.apache.kafka.common.security.oauthbearer.secured.OAuthBearerLoginCallbackHandler
+sasl.oauthbearer.token.endpoint.url=https://147.102.6.143:30443/realms/d-navio/protocol/openid-connect/token
+sasl.jaas.config=org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required clientId="<client>" clientSecret="<secret>" ;
+```
 
 - `bootstrap.servers=147.102.6.143:30094`
-- `token.endpoint.url=http://147.102.6.143:30080/realms/d-navio/protocol/openid-connect/token`
 - their own client + secret (issued during onboarding)
+- `ssl.truststore.location` is the environment's dev CA file (distributed
+  out-of-band); it lets the client validate the self-signed server certificate.
 
 ## Secret Handling
 
@@ -96,10 +110,10 @@ It is never committed to git.
 
 1. Create a confidential client for the partner in the `d-navio` realm
    (service-account / client-credentials), issue a client secret.
-2. Share with the partner: the external token endpoint, their `clientId` +
-   secret, `bootstrap.servers=147.102.6.143:30094`, and the topic(s) they may
-   use.
-3. Partner builds the `client.properties` above and connects.
+2. Share with the partner: the HTTPS token endpoint, their `clientId` +
+   secret, `bootstrap.servers=147.102.6.143:30094`, the environment's dev CA
+   file (for `ssl.truststore.location`), and the topic(s) they may use.
+3. Partner builds the EXTERNAL `client.properties` above (SASL_SSL) and connects.
 4. (Future) Restrict the partner to specific topics via ACLs.
 
 ## Verifying
@@ -122,10 +136,12 @@ kubectl exec -n dnavio-dev deploy/kafka -- \
 | `Audience (aud) claim [account] present ... no expected audience` | expected audience not set | set `KAFKA_SASL_OAUTHBEARER_EXPECTED_AUDIENCE` |
 | `Invalid issuer` / `iss` mismatch | token issuer ≠ broker expected issuer | align `KC_HOSTNAME` with `EXPECTED_ISSUER` |
 | `invalid_token` on every connect | client has no/expired token, or wrong realm | check client secret, token endpoint, realm |
-| client hangs forever | client using PLAINTEXT against a SASL listener | set `security.protocol=SASL_PLAINTEXT` + OAUTHBEARER |
+| client hangs forever | wrong protocol for the listener | INTERNAL → `SASL_PLAINTEXT`; EXTERNAL → `SASL_SSL` + OAUTHBEARER |
+| `SSLHandshakeException` / cert not trusted | missing/wrong truststore on EXTERNAL | point `ssl.truststore.location` at the environment's dev CA file |
 
 ## Out of Scope (planned follow-ups)
 
-- TLS encryption (`SASL_SSL`) — `feat/secrets-management`
+- Production CA-issued certificate (replacing the self-signed dev CA) — `feat/secrets-management`
+- TLS on the INTERNAL listener (currently trusted-network `SASL_PLAINTEXT`)
 - Topic-level ACLs / authorization — `feat/rbac-access-model`
 - Dedicated `kafka` token audience (tighter than `account`)

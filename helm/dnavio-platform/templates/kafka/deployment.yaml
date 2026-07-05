@@ -23,6 +23,24 @@ spec:
       enableServiceLinks: false
       restartPolicy: Always
       initContainers:
+        # Kafka's PEM keystore is a single file with the cert chain + private key.
+        # The dnavio-tls Secret exposes them as separate tls.crt/tls.key, so
+        # concatenate them into a shared emptyDir the broker reads at startup.
+        - name: assemble-keystore
+          image: "{{ .Values.kafka.image.repository }}:{{ .Values.kafka.image.tag }}"
+          command:
+            - /bin/bash
+            - -c
+            - cat /etc/dnavio-tls/tls.crt /etc/dnavio-tls/tls.key > /etc/kafka-tls/keystore.pem
+          volumeMounts:
+            - name: dnavio-tls
+              mountPath: /etc/dnavio-tls
+              readOnly: true
+            - name: kafka-tls
+              mountPath: /etc/kafka-tls
+        # Block until the d-navio realm's JWKS endpoint exists — on a fresh
+        # install the realm is created by the post-install bootstrap Job, and
+        # Kafka crashes at startup if it cannot fetch validation keys.
         - name: wait-for-keycloak-realm
           image: curlimages/curl:8.11.0
           command: ["/bin/sh", "-c"]
@@ -67,8 +85,10 @@ spec:
               value: "BROKER://127.0.0.1:9091,INTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:9094"
             - name: KAFKA_ADVERTISED_LISTENERS
               value: "BROKER://127.0.0.1:9091,INTERNAL://kafka:9092,EXTERNAL://{{ .Values.kafka.external.advertisedHost }}:{{ .Values.kafka.external.nodePort }}"
+            # EXTERNAL is SASL_SSL — partner tokens travel over TLS. INTERNAL stays
+            # SASL_PLAINTEXT (trusted in-cluster network); loopback stays PLAINTEXT.
             - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
-              value: "BROKER:PLAINTEXT,INTERNAL:SASL_PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:SASL_PLAINTEXT"
+              value: "BROKER:PLAINTEXT,INTERNAL:SASL_PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:SASL_SSL"
             - name: KAFKA_INTER_BROKER_LISTENER_NAME
               value: "BROKER"
             # OAUTHBEARER (OIDC): validate every client token against Keycloak.
@@ -92,6 +112,13 @@ spec:
               value: "org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required ;"
             - name: KAFKA_LISTENER_NAME_EXTERNAL_OAUTHBEARER_SASL_JAAS_CONFIG
               value: "org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required ;"
+            # TLS server material for the EXTERNAL (SASL_SSL) listener. PEM keystore
+            # (cert chain + key) is assembled by the init container below. No
+            # truststore: server-side TLS only; client auth is via OAUTHBEARER.
+            - name: KAFKA_SSL_KEYSTORE_TYPE
+              value: "PEM"
+            - name: KAFKA_SSL_KEYSTORE_LOCATION
+              value: "/etc/kafka-tls/keystore.pem"
             - name: KAFKA_LOG_DIRS
               value: /var/lib/kafka/data/kraft-combined-logs
             - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
@@ -111,7 +138,15 @@ spec:
           volumeMounts:
             - name: kafka-data
               mountPath: /var/lib/kafka/data
+            - name: kafka-tls
+              mountPath: /etc/kafka-tls
+              readOnly: true
       volumes:
         - name: kafka-data
           persistentVolumeClaim:
             claimName: kafka-data
+        - name: dnavio-tls
+          secret:
+            secretName: {{ .Values.tls.secretName }}
+        - name: kafka-tls
+          emptyDir: {}

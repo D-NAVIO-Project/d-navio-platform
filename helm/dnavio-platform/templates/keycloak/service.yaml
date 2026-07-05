@@ -17,6 +17,14 @@ spec:
       {{- if eq .Values.keycloak.service.type "NodePort" }}
       nodePort: {{ .Values.keycloak.service.nodePort }}
       {{- end }}
+    # HTTPS — the port external/partner clients should use for token retrieval.
+    - name: https
+      port: 8443
+      targetPort: 8443
+      protocol: TCP
+      {{- if eq .Values.keycloak.service.type "NodePort" }}
+      nodePort: {{ .Values.keycloak.service.httpsNodePort }}
+      {{- end }}
   selector:
     {{- include "dnavio-platform.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: keycloak

@@ -6,3 +6,6 @@ kubeconfig
 # Local environment overrides
 .env
 *.env.local
+
+# Generated dev TLS CA certs (scripts/tls/generate-dev-cert.sh) — never commit
+*-ca.crt
