@@ -82,12 +82,22 @@ def send():
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "payload": {"reading_id": str(uuid.uuid4()), "value": 42},
     }
+    # flush() alone is not enough: a rejected message (e.g. TOPIC_AUTHORIZATION_FAILED)
+    # still produces a delivery report and empties the queue, so the error is
+    # only visible through the delivery callback.
+    delivery = {}
+
+    def _on_delivery(err, _msg):
+        delivery["error"] = err
+
     try:
         p = Producer(_kafka_conf())
-        p.produce(TOPIC, value=json.dumps(message).encode())
+        p.produce(TOPIC, value=json.dumps(message).encode(), on_delivery=_on_delivery)
         remaining = p.flush(timeout=15)
         if remaining:
             raise RuntimeError("Message not delivered within timeout")
+        if delivery.get("error") is not None:
+            raise RuntimeError(f"Delivery failed: {delivery['error']}")
         return {"sent": message, "topic": TOPIC}
     except HTTPException:
         raise

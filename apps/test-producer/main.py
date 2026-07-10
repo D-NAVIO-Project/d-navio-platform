@@ -46,12 +46,22 @@ def health():
 
 @app.post("/send")
 def send():
+    # flush() alone is not enough: a rejected message (e.g. authorization
+    # failure) still fires a delivery report and empties the queue — the error
+    # is only visible through the delivery callback.
+    delivery = {}
+
+    def _on_delivery(err, _msg):
+        delivery["error"] = err
+
     try:
         p = Producer(_kafka_conf())
-        p.produce(TOPIC, value=b"42")
+        p.produce(TOPIC, value=b"42", on_delivery=_on_delivery)
         remaining = p.flush(timeout=10)
         if remaining:
             raise RuntimeError("Message not delivered within timeout")
+        if delivery.get("error") is not None:
+            raise RuntimeError(f"Delivery failed: {delivery['error']}")
         return {"sent": "42", "topic": TOPIC}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
