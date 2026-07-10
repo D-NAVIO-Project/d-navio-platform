@@ -13,14 +13,16 @@ Both scenarios result in the same outcome: users get a JWT token issued by D-NAV
 
 | Parameter | Value |
 |-----------|-------|
-| **Keycloak base URL** | `http://147.102.6.143:30080` |
+| **Keycloak base URL** | `https://147.102.6.143:30443` |
 | **Realm** | `d-navio` |
-| **OIDC discovery endpoint** | `http://147.102.6.143:30080/realms/d-navio/.well-known/openid-configuration` |
-| **Authorization endpoint** | `http://147.102.6.143:30080/realms/d-navio/protocol/openid-connect/auth` |
-| **Token endpoint** | `http://147.102.6.143:30080/realms/d-navio/protocol/openid-connect/token` |
-| **JWKS endpoint** | `http://147.102.6.143:30080/realms/d-navio/protocol/openid-connect/certs` |
+| **OIDC discovery endpoint** | `https://147.102.6.143:30443/realms/d-navio/.well-known/openid-configuration` |
+| **Authorization endpoint** | `https://147.102.6.143:30443/realms/d-navio/protocol/openid-connect/auth` |
+| **Token endpoint** | `https://147.102.6.143:30443/realms/d-navio/protocol/openid-connect/token` |
+| **JWKS endpoint** | `https://147.102.6.143:30443/realms/d-navio/protocol/openid-connect/certs` |
 
 > The discovery endpoint returns all URLs above automatically. Most OIDC libraries only need the base URL + realm name.
+>
+> **TLS note:** the platform currently uses a D-NAVIO-issued CA. Your application must trust the `ca.crt` provided during onboarding when connecting to these endpoints (e.g. `verify="ca.crt"` in Python, a PEM truststore in Java, or `NODE_EXTRA_CA_CERTS` for Node.js).
 
 ---
 
@@ -30,7 +32,7 @@ Use this when: partner users will create accounts in D-NAVIO Keycloak, or accoun
 
 ### Step 1 — D-NAVIO sets up a client in Keycloak
 
-The D-NAVIO team performs this in the Keycloak admin console (`http://147.102.6.143:30080` → Admin → `d-navio` realm):
+The D-NAVIO team performs this in the Keycloak admin console (`https://147.102.6.143:30443` → Admin → `d-navio` realm):
 
 1. **Clients → Create client**
    - Client type: `OpenID Connect`
@@ -86,7 +88,7 @@ app = FastAPI()
 CLIENT_ID     = "partner-maggioli"
 CLIENT_SECRET = "your-client-secret"   # omit for public/PKCE clients
 REDIRECT_URI  = "https://your-app.com/callback"
-KEYCLOAK_BASE = "http://147.102.6.143:30080/realms/d-navio/protocol/openid-connect"
+KEYCLOAK_BASE = "https://147.102.6.143:30443/realms/d-navio/protocol/openid-connect"
 
 @app.get("/login")
 async def login():
@@ -127,7 +129,7 @@ export default NextAuth({
       id: "keycloak",
       name: "D-NAVIO",
       type: "oauth",
-      wellKnown: "http://147.102.6.143:30080/realms/d-navio/.well-known/openid-configuration",
+      wellKnown: "https://147.102.6.143:30443/realms/d-navio/.well-known/openid-configuration",
       clientId: "partner-maggioli",
       clientSecret: "your-client-secret",
       authorization: { params: { scope: "openid profile email" } },
@@ -167,7 +169,7 @@ spring:
             scope: openid, profile, email
         provider:
           dnavio:
-            issuer-uri: http://147.102.6.143:30080/realms/d-navio
+            issuer-uri: https://147.102.6.143:30443/realms/d-navio
 ```
 
 Spring Security handles the full login/callback flow automatically.
@@ -218,7 +220,7 @@ In Keycloak admin → `d-navio` realm → **Identity Providers → Add provider*
 |-------|-------|
 | Provider type | SAML v2.0 |
 | Alias | `partner-<name>` |
-| Service Provider Entity ID | `http://147.102.6.143:30080/realms/d-navio` |
+| Service Provider Entity ID | `https://147.102.6.143:30443/realms/d-navio` |
 | IdP Metadata | *(paste partner's XML or URL)* |
 
 After saving, Keycloak generates a **Service Provider metadata URL** that the partner must register in their IdP.
@@ -245,9 +247,9 @@ Once Keycloak is configured, provide the partner with:
 
 | Item | Value |
 |------|-------|
-| **SP Entity ID / Issuer** | `http://147.102.6.143:30080/realms/d-navio` |
-| **Redirect / Callback URI** | `http://147.102.6.143:30080/realms/d-navio/broker/partner-<name>/endpoint` |
-| **SAML metadata URL** (SAML only) | `http://147.102.6.143:30080/realms/d-navio/protocol/saml/descriptor` |
+| **SP Entity ID / Issuer** | `https://147.102.6.143:30443/realms/d-navio` |
+| **Redirect / Callback URI** | `https://147.102.6.143:30443/realms/d-navio/broker/partner-<name>/endpoint` |
+| **SAML metadata URL** (SAML only) | `https://147.102.6.143:30443/realms/d-navio/protocol/saml/descriptor` |
 
 The partner registers these in their Azure AD app registration, Okta application, or AD FS relying party.
 

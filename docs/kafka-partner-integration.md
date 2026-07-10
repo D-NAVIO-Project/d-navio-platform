@@ -12,6 +12,7 @@ Before writing any code, contact the NTUA team and request the following:
 |------|-------------|
 | **Client ID** | A unique identifier for your application (e.g. `partner-maggioli`) |
 | **Client Secret** | A secret credential paired with your Client ID |
+| **CA certificate** | The D-NAVIO CA certificate (`ca.crt`) used to verify the TLS connection to the broker and the token endpoint |
 | **Topic list** | The specific Kafka topics you are authorized to produce to or consume from |
 
 These credentials are created in D-NAVIO's identity provider (Keycloak) and are specific to your application. Do not share them across teams or applications.
@@ -24,8 +25,8 @@ Before configuring your application, verify that your environment can reach the 
 
 | Endpoint | Host | Port | Protocol | Purpose |
 |----------|------|------|----------|---------|
-| Kafka broker | `147.102.6.143` | `30094` | TCP | Message produce / consume |
-| Token endpoint | `147.102.6.143` | `30080` | HTTP | Obtain OAUTHBEARER token |
+| Kafka broker | `147.102.6.143` | `30094` | TCP (TLS) | Message produce / consume |
+| Token endpoint | `147.102.6.143` | `30443` | HTTPS | Obtain OAUTHBEARER token |
 
 **Firewall check** — run these from your environment before writing any code:
 
@@ -33,9 +34,10 @@ Before configuring your application, verify that your environment can reach the 
 # Check Kafka broker reachability
 nc -zv 147.102.6.143 30094
 
-# Check Keycloak reachability
-curl -s -o /dev/null -w "%{http_code}" \
-  http://147.102.6.143:30080/realms/d-navio/.well-known/openid-configuration
+# Check Keycloak reachability (--cacert: the ca.crt provided by the NTUA team;
+# use -k instead for a quick connectivity-only test)
+curl -s -o /dev/null -w "%{http_code}" --cacert ca.crt \
+  https://147.102.6.143:30443/realms/d-navio/.well-known/openid-configuration
 # Expected: 200
 ```
 
@@ -48,9 +50,10 @@ If either check fails, contact the NTUA team — a firewall rule may need to be 
 | Parameter | Value |
 |-----------|-------|
 | **Kafka bootstrap server** | `147.102.6.143:30094` |
-| **Security protocol** | `SASL_PLAINTEXT` |
+| **Security protocol** | `SASL_SSL` (TLS) |
 | **SASL mechanism** | `OAUTHBEARER` |
-| **Token endpoint** | `http://147.102.6.143:30080/realms/d-navio/protocol/openid-connect/token` |
+| **Token endpoint** | `https://147.102.6.143:30443/realms/d-navio/protocol/openid-connect/token` |
+| **CA certificate** | `ca.crt` provided during onboarding — required to verify both endpoints |
 
 ### How authentication works
 
@@ -75,8 +78,8 @@ Token refresh is handled automatically by the Kafka client libraries shown below
 Before connecting to Kafka, confirm you can obtain a token:
 
 ```bash
-curl -s -X POST \
-  http://147.102.6.143:30080/realms/d-navio/protocol/openid-connect/token \
+curl -s -X POST --cacert ca.crt \
+  https://147.102.6.143:30443/realms/d-navio/protocol/openid-connect/token \
   -d "grant_type=client_credentials" \
   -d "client_id=your-client-id" \
   -d "client_secret=your-client-secret" | python3 -m json.tool
@@ -181,7 +184,9 @@ spec:
             - name: KAFKA_BOOTSTRAP
               value: "147.102.6.143:30094"
             - name: KAFKA_TOKEN_URL
-              value: "http://147.102.6.143:30080/realms/d-navio/protocol/openid-connect/token"
+              value: "https://147.102.6.143:30443/realms/d-navio/protocol/openid-connect/token"
+            - name: KAFKA_CA_CERT
+              value: "/etc/dnavio-ca/ca.crt"
             - name: KAFKA_CLIENT_ID
               valueFrom:
                 secretKeyRef:
@@ -192,6 +197,20 @@ spec:
                 secretKeyRef:
                   name: dnavio-kafka-credentials
                   key: client-secret
+          volumeMounts:
+            - name: dnavio-ca
+              mountPath: /etc/dnavio-ca
+              readOnly: true
+      volumes:
+        - name: dnavio-ca
+          secret:
+            secretName: dnavio-ca
+```
+
+Create the CA Secret from the `ca.crt` provided during onboarding:
+
+```bash
+kubectl create secret generic dnavio-ca --from-file=ca.crt -n your-namespace
 ```
 
 ### Step 3 — Read the environment variables in your application
@@ -219,9 +238,10 @@ import os, time, requests
 from confluent_kafka import Producer, Consumer
 
 BOOTSTRAP     = os.getenv("KAFKA_BOOTSTRAP",    "147.102.6.143:30094")
-TOKEN_URL     = os.getenv("KAFKA_TOKEN_URL",    "http://147.102.6.143:30080/realms/d-navio/protocol/openid-connect/token")
+TOKEN_URL     = os.getenv("KAFKA_TOKEN_URL",    "https://147.102.6.143:30443/realms/d-navio/protocol/openid-connect/token")
 CLIENT_ID     = os.getenv("KAFKA_CLIENT_ID",    "your-client-id")
 CLIENT_SECRET = os.getenv("KAFKA_CLIENT_SECRET","your-client-secret")
+CA_CERT       = os.getenv("KAFKA_CA_CERT",      "ca.crt")  # provided by the NTUA team
 
 
 def fetch_token(config):
@@ -233,6 +253,7 @@ def fetch_token(config):
             "client_secret": CLIENT_SECRET,
         },
         timeout=10,
+        verify=CA_CERT,
     )
     resp.raise_for_status()
     data = resp.json()
@@ -241,7 +262,8 @@ def fetch_token(config):
 
 kafka_conf = {
     "bootstrap.servers": BOOTSTRAP,
-    "security.protocol": "SASL_PLAINTEXT",
+    "security.protocol": "SASL_SSL",
+    "ssl.ca.location":   CA_CERT,
     "sasl.mechanism":    "OAUTHBEARER",
     "oauth_cb":          fetch_token,
 }
@@ -298,7 +320,10 @@ spring:
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP:147.102.6.143:30094}
     properties:
-      security.protocol: SASL_PLAINTEXT
+      security.protocol: SASL_SSL
+      # PEM truststore: point at the ca.crt provided by the NTUA team
+      ssl.truststore.type: PEM
+      ssl.truststore.location: ${KAFKA_CA_CERT:ca.crt}
       sasl.mechanism: OAUTHBEARER
       sasl.login.callback.handler.class: >
         org.apache.kafka.common.security.oauthbearer.secured.OAuthBearerLoginCallbackHandler
@@ -324,6 +349,7 @@ spring:
 | Error | Likely Cause | Action |
 |-------|-------------|--------|
 | `Connection refused` to port 30094 | Network/firewall | Check port reachability with `nc -zv` |
+| `SSL handshake failed` / `certificate verify failed` | CA certificate missing or not trusted | Point your client at the `ca.crt` provided by the NTUA team (`ssl.ca.location` / truststore / `verify=`) |
 | `401 Unauthorized` from token endpoint | Wrong `client_id` or `client_secret` | Verify credentials with the NTUA team |
 | `Authentication failed` from Kafka | Token expired or wrong issuer | Check the token endpoint URL — must match exactly |
 | `Topic authorization failed` | Client not authorized for this topic | Request access from the NTUA team |
@@ -354,7 +380,7 @@ kafka_conf = {
 
 ## 9. Notes and Constraints
 
-- **No TLS** — the connection uses `SASL_PLAINTEXT` (authenticated but unencrypted). If your compliance requirements mandate encryption in transit, raise this with the NTUA team.
+- **TLS on all external endpoints** — the broker's external listener uses `SASL_SSL` and the token endpoint is HTTPS. The platform currently uses a D-NAVIO-issued CA, so your client must trust the `ca.crt` provided during onboarding. Do not disable certificate verification in production code.
 - **Token TTL is 5 minutes** — the client libraries handle refresh automatically. Do not cache tokens manually.
 - **One client per application** — do not share `client_id` / `client_secret` across teams or services.
 - **Topic access is scoped** — your client is only granted access to agreed topics. Unauthorized topic access returns an authentication error, not a permissions error.
@@ -363,11 +389,11 @@ kafka_conf = {
 
 ## 10. Onboarding Checklist
 
-- [ ] Client ID and Client Secret received from the NTUA team
+- [ ] Client ID, Client Secret, and CA certificate (`ca.crt`) received from the NTUA team
 - [ ] Topics confirmed with the NTUA team
-- [ ] Port `30094` (Kafka) reachable from your environment
-- [ ] Port `30080` (Keycloak) reachable from your environment
-- [ ] Token obtained successfully via `curl`
+- [ ] Port `30094` (Kafka, TLS) reachable from your environment
+- [ ] Port `30443` (Keycloak, HTTPS) reachable from your environment
+- [ ] Token obtained successfully via `curl` (using `--cacert ca.crt`)
 - [ ] Test message produced and consumed end-to-end
 - [ ] Kubernetes Secret created and injected into your Deployment
 - [ ] Consumer group ID follows the naming convention `partner-<name>-<purpose>`
