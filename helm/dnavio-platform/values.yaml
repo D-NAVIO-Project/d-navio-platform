@@ -51,6 +51,15 @@ keycloak:
   # Persist the H2 database so the realm + clients survive pod restarts.
   storage:
     size: 1Gi
+  # Realm roles created and reconciled by the bootstrap Job. Realm roles are
+  # embedded in every issued token (realm_access.roles), so services and APIs
+  # can authorize on them immediately; they also form the basis for per-topic
+  # Kafka authorization when ACL enforcement is introduced.
+  roles:
+    - name: dnavio-operator
+      description: Full platform access. Produce and consume on all platform topics. Intended for core platform services and NTUA-managed components.
+    - name: dnavio-partner
+      description: Restricted partner access. Produce to ingestion topics and consume designated output topics only. Intended for partner services and users.
   clients:
     # Confidential client used by D-NAVIO services and the Kafka scripts/Job to
     # obtain tokens (client credentials grant). The realm-bootstrap Job reconciles
@@ -59,6 +68,9 @@ keycloak:
     dnavioApi:
       clientId: dnavio-api
       secret: ""
+      # Realm role granted to this client's service account (must be one of
+      # keycloak.roles above).
+      role: dnavio-operator
 
 minio:
   image:

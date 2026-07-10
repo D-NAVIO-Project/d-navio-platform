@@ -91,4 +91,26 @@ spec:
                   -s secret="${DNAVIO_API_SECRET}"
               fi
 
+              # Ensure platform realm roles exist (create, or reconcile the
+              # description if already present).
+              {{- range .Values.keycloak.roles }}
+              if "$KCADM" get "roles/{{ .name }}" -r "${REALM}" >/dev/null 2>&1; then
+                echo "Role '{{ .name }}' already exists - reconciling."
+                "$KCADM" update "roles/{{ .name }}" -r "${REALM}" \
+                  -s 'description={{ .description }}'
+              else
+                echo "Creating role '{{ .name }}'."
+                "$KCADM" create roles -r "${REALM}" \
+                  -s 'name={{ .name }}' \
+                  -s 'description={{ .description }}'
+              fi
+              {{- end }}
+
+              # Grant the platform service account its realm role. add-roles is
+              # idempotent: re-granting an already-held role is a no-op.
+              echo "Granting role '{{ .Values.keycloak.clients.dnavioApi.role }}' to service account of '${CLIENT_ID}'."
+              "$KCADM" add-roles -r "${REALM}" \
+                --uusername "service-account-${CLIENT_ID}" \
+                --rolename "{{ .Values.keycloak.clients.dnavioApi.role }}"
+
               echo "Keycloak realm bootstrap complete."
