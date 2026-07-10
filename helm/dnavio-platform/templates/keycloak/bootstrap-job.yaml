@@ -133,11 +133,20 @@ spec:
                 fi
               }
 
-              for c in svc-dml svc-frs svc-dynamo; do
+              for c in svc-dml svc-frs svc-dynamo svc-admin; do
                 ensure_service_client "$c"
               done
               for r in operator analyst integrator admin; do
                 ensure_realm_role "$r"
               done
+
+              # svc-admin is the platform-administration machine identity: it
+              # holds the 'admin' realm role (so its tokens carry it in
+              # realm_access.roles) and is the only principal allowed to write
+              # to ACL-restricted admin topics (see kafka.acls in values.yaml).
+              # add-roles is idempotent.
+              "$KCADM" add-roles -r "${REALM}" \
+                --uusername "service-account-svc-admin" \
+                --rolename admin
 
               echo "Keycloak realm bootstrap complete."

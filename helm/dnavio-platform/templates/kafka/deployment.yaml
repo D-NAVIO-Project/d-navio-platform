@@ -112,6 +112,26 @@ spec:
               value: "org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required ;"
             - name: KAFKA_LISTENER_NAME_EXTERNAL_OAUTHBEARER_SASL_JAAS_CONFIG
               value: "org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required ;"
+            # --- Authorization (ACLs) ---
+            # StandardAuthorizer with incremental rollout: topics WITHOUT ACLs
+            # remain open to any authenticated client; topics WITH ACLs are
+            # deny-by-default. ACLs are created by the kafka-acls-init Job from
+            # .Values.kafka.acls.
+            - name: KAFKA_AUTHORIZER_CLASS_NAME
+              value: "org.apache.kafka.metadata.authorizer.StandardAuthorizer"
+            - name: KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND
+              value: "true"
+            # Loopback listeners (BROKER inter-broker, CONTROLLER quorum) are
+            # PLAINTEXT and map to ANONYMOUS — the broker itself must be super
+            # user or KRaft breaks. Dev-grade tradeoff: anything reaching the
+            # controller port unauthenticated would also be ANONYMOUS.
+            - name: KAFKA_SUPER_USERS
+              value: "User:ANONYMOUS"
+            # Derive the Kafka principal from the token's azp claim (the
+            # Keycloak client id) instead of the opaque sub UUID, so ACLs read
+            # as User:svc-admin / User:svc-dynamo.
+            - name: KAFKA_SASL_OAUTHBEARER_SUB_CLAIM_NAME
+              value: "azp"
             # TLS server material for the EXTERNAL (SASL_SSL) listener. PEM keystore
             # (cert chain + key) is assembled by the init container below. No
             # truststore: server-side TLS only; client auth is via OAUTHBEARER.

@@ -36,6 +36,19 @@ kafka:
     - name: dnavio.dml.deadletter
       partitions: 1
       replicationFactor: 1
+    # Mock restricted topic: demonstrates enforced ACLs. Only the admin
+    # identity may write (see kafka.acls below).
+    - name: dnavio.ops.admin-audit
+      partitions: 1
+      replicationFactor: 1
+  # Topic ACLs enforced by StandardAuthorizer, created by the kafka-acls-init
+  # Job. Topics NOT listed here remain open to any authenticated client
+  # (allow.everyone.if.no.acl.found=true). For each entry: any authenticated
+  # client may read; only the listed writer principals may produce.
+  acls:
+    - topic: dnavio.ops.admin-audit
+      writers:
+        - svc-admin
 
 keycloak:
   image:
