@@ -75,6 +75,7 @@ spec:
                 "$KCADM" create clients -r "${REALM}" \
                   -s clientId="${CLIENT_ID}" \
                   -s enabled=true \
+                  -s protocol=openid-connect \
                   -s publicClient=false \
                   -s standardFlowEnabled=false \
                   -s directAccessGrantsEnabled=false \
@@ -84,11 +85,68 @@ spec:
                 echo "Reconciling client '${CLIENT_ID}' (${CID})."
                 "$KCADM" update "clients/${CID}" -r "${REALM}" \
                   -s enabled=true \
+                  -s protocol=openid-connect \
                   -s publicClient=false \
                   -s standardFlowEnabled=false \
                   -s directAccessGrantsEnabled=false \
                   -s serviceAccountsEnabled=true \
                   -s secret="${DNAVIO_API_SECRET}"
               fi
+
+              # --- RBAC identities (feat/rbac-access-model) ---
+              # Component service accounts. Created without a fixed secret —
+              # Keycloak generates one, retrieved/rotated when the component
+              # onboards. ACL enforcement is NOT enabled yet (authn-only broker).
+              ensure_service_client() {
+                local cid="$1" existing
+                existing=$("$KCADM" get clients -r "${REALM}" -q clientId="${cid}" \
+                  --fields id --format csv --noquotes 2>/dev/null | tail -n1 | tr -d '\r')
+                if [ -z "${existing}" ]; then
+                  echo "Creating service-account client '${cid}'."
+                  "$KCADM" create clients -r "${REALM}" \
+                    -s clientId="${cid}" \
+                    -s enabled=true \
+                    -s protocol=openid-connect \
+                    -s publicClient=false \
+                    -s standardFlowEnabled=false \
+                    -s directAccessGrantsEnabled=false \
+                    -s serviceAccountsEnabled=true
+                else
+                  echo "Reconciling service-account client '${cid}' (${existing})."
+                  "$KCADM" update "clients/${existing}" -r "${REALM}" \
+                    -s enabled=true \
+                    -s protocol=openid-connect \
+                    -s publicClient=false \
+                    -s standardFlowEnabled=false \
+                    -s directAccessGrantsEnabled=false \
+                    -s serviceAccountsEnabled=true
+                fi
+              }
+
+              ensure_realm_role() {
+                local role="$1"
+                if "$KCADM" get "roles/${role}" -r "${REALM}" >/dev/null 2>&1; then
+                  echo "Realm role '${role}' already exists."
+                else
+                  echo "Creating realm role '${role}'."
+                  "$KCADM" create roles -r "${REALM}" -s name="${role}"
+                fi
+              }
+
+              for c in svc-dml svc-frs svc-dynamo svc-admin; do
+                ensure_service_client "$c"
+              done
+              for r in operator analyst integrator admin; do
+                ensure_realm_role "$r"
+              done
+
+              # svc-admin is the platform-administration machine identity: it
+              # holds the 'admin' realm role (so its tokens carry it in
+              # realm_access.roles) and is the only principal allowed to write
+              # to ACL-restricted admin topics (see kafka.acls in values.yaml).
+              # add-roles is idempotent.
+              "$KCADM" add-roles -r "${REALM}" \
+                --uusername "service-account-svc-admin" \
+                --rolename admin
 
               echo "Keycloak realm bootstrap complete."

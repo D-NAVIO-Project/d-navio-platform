@@ -1,0 +1,62 @@
+{{- if .Values.kafka.acls }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-acls-init
+  labels:
+    {{- include "dnavio-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kafka
+  annotations:
+    # Weight 15 > kafka-topics-init (10) so the topics exist before ACLs are
+    # attached to them. kafka-acls --add is idempotent (re-adding is a no-op).
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "15"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 5
+  template:
+    metadata:
+      labels:
+        {{- include "dnavio-platform.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: kafka-acls-init
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: create-acls
+          image: "{{ .Values.kafka.image.repository }}:{{ .Values.kafka.image.tag }}"
+          env:
+            - name: DNAVIO_API_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-client-secrets
+                  key: dnavio-api-secret
+          command:
+            - /bin/bash
+            - -c
+            - |
+              cat > /tmp/client.properties <<EOF
+              security.protocol=SASL_PLAINTEXT
+              sasl.mechanism=OAUTHBEARER
+              sasl.login.callback.handler.class=org.apache.kafka.common.security.oauthbearer.secured.OAuthBearerLoginCallbackHandler
+              sasl.oauthbearer.token.endpoint.url=http://keycloak:8080/realms/{{ .Values.keycloak.realm }}/protocol/openid-connect/token
+              sasl.jaas.config=org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required clientId="{{ .Values.keycloak.clients.dnavioApi.clientId }}" clientSecret="${DNAVIO_API_SECRET}" ;
+              EOF
+              {{- range $acl := .Values.kafka.acls }}
+              echo "Applying ACLs for topic {{ $acl.topic }}: read open, write restricted to {{ $acl.writers | join ", " }}"
+              # Any authenticated client may read.
+              kafka-acls --bootstrap-server kafka:9092 \
+                --command-config /tmp/client.properties \
+                --add --allow-principal "User:*" \
+                --operation Read --operation Describe \
+                --topic {{ $acl.topic }}
+              {{- range $writer := $acl.writers }}
+              # Only the listed writers may produce.
+              kafka-acls --bootstrap-server kafka:9092 \
+                --command-config /tmp/client.properties \
+                --add --allow-principal "User:{{ $writer }}" \
+                --operation Write --operation Describe \
+                --topic {{ $acl.topic }}
+              {{- end }}
+              {{- end }}
+              echo "All D-NAVIO topic ACLs applied."
+{{- end }}

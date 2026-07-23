@@ -1,0 +1,87 @@
+# Mock partner deployment — standalone, NOT part of the dnavio-platform chart.
+# Lives in its own namespace and reaches the platform only through the public
+# endpoints (Kafka SASL_SSL NodePort + Keycloak HTTPS NodePort), exactly like
+# a real external partner.
+#
+# Prerequisites (see apps/partner-mock/README.md):
+#   kubectl create namespace partner-mock
+#   kubectl create secret generic dnavio-kafka-credentials -n partner-mock \
+#     --from-literal=client-id=svc-dynamo \
+#     --from-literal=client-secret=<retrieved-from-keycloak>
+#   kubectl create secret generic dnavio-ca -n partner-mock \
+#     --from-file=ca.crt=dnavio-dev-ca.crt
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: partner-mock
+  namespace: partner-mock
+  labels:
+    app: partner-mock
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: partner-mock
+  template:
+    metadata:
+      labels:
+        app: partner-mock
+    spec:
+      containers:
+        - name: partner-mock
+          image: partner-mock:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8000
+          env:
+            - name: KAFKA_BOOTSTRAP
+              value: "147.102.6.143:30094"
+            - name: KAFKA_TOKEN_URL
+              value: "https://147.102.6.143:30443/realms/d-navio/protocol/openid-connect/token"
+            - name: KAFKA_TOPIC
+              value: "dnavio.dml.telemetry.raw"
+            - name: KAFKA_CA_CERT
+              value: "/etc/dnavio-ca/ca.crt"
+            - name: KAFKA_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: dnavio-kafka-credentials
+                  key: client-id
+            - name: KAFKA_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dnavio-kafka-credentials
+                  key: client-secret
+          volumeMounts:
+            - name: dnavio-ca
+              mountPath: /etc/dnavio-ca
+              readOnly: true
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+      volumes:
+        - name: dnavio-ca
+          secret:
+            secretName: dnavio-ca
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: partner-mock
+  namespace: partner-mock
+  labels:
+    app: partner-mock
+spec:
+  type: NodePort
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      nodePort: 30800
+      protocol: TCP
+  selector:
+    app: partner-mock
