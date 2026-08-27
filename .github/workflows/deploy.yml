@@ -65,61 +65,12 @@ jobs:
             --timeout 10m \
             --atomic
 
-  deploy-integration:
-    name: Deploy → integration
-    needs: deploy-dev
-    if: ${{ needs.deploy-dev.result == 'success' }}
-    runs-on: [self-hosted, dnavio-vm]
-    environment: integration
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set kubectl context
-        run: kubectl config use-context kubernetes-admin@kubernetes
-
-      - name: Migrate manually-applied resources to Helm
-        run: |
-          NS=dnavio-integration
-          RELEASE=dnavio-platform
-          if ! helm status "$RELEASE" -n "$NS" > /dev/null 2>&1; then
-            echo "No Helm release found — removing manually-applied resources before install"
-            kubectl delete deployment kafka keycloak minio \
-              -n "$NS" --ignore-not-found --timeout=90s || true
-            kubectl delete pvc kafka-data minio-data \
-              -n "$NS" --ignore-not-found --timeout=90s || true
-          fi
-
-      - name: Deploy to dnavio-integration
-        env:
-          KEYCLOAK_PASS: ${{ secrets.KEYCLOAK_ADMIN_PASSWORD }}
-          MINIO_PASS: ${{ secrets.MINIO_ROOT_PASSWORD }}
-          DNAVIO_API_SECRET: ${{ secrets.DNAVIO_API_CLIENT_SECRET }}
-        run: |
-          tmp=$(mktemp /tmp/secrets-XXXXXX.yaml)
-          trap "rm -f $tmp" EXIT
-          python3 -c "
-          import os, json
-          print('keycloak:')
-          print('  adminPassword: ' + json.dumps(os.environ['KEYCLOAK_PASS']))
-          print('  clients:')
-          print('    dnavioApi:')
-          print('      secret: ' + json.dumps(os.environ['DNAVIO_API_SECRET']))
-          print('minio:')
-          print('  rootPassword: ' + json.dumps(os.environ['MINIO_PASS']))
-          " > "$tmp"
-          helm upgrade --install dnavio-platform ./helm/dnavio-platform \
-            --namespace dnavio-integration \
-            --create-namespace \
-            -f helm/dnavio-platform/values-integration.yaml \
-            -f "$tmp" \
-            --wait \
-            --timeout 10m \
-            --atomic
 
   deploy-pilot:
     name: Deploy → pilot
-    needs: deploy-integration
-    if: ${{ needs.deploy-integration.result == 'success' }}
+    needs: deploy-dev
+    if: false #Currently Disabled
+    # if: ${{ needs.deploy-dev.result == 'success' }}
     runs-on: [self-hosted, dnavio-vm]
     environment: pilot
     steps:

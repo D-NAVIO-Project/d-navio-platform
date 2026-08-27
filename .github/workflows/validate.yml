@@ -36,9 +36,8 @@ jobs:
           version: "v3.17.0"
       - name: Lint chart (dev values)
         run: helm lint ./helm/dnavio-platform -f helm/dnavio-platform/values-dev.yaml
-      - name: Lint chart (integration values)
-        run: helm lint ./helm/dnavio-platform -f helm/dnavio-platform/values-integration.yaml
       - name: Lint chart (pilot values)
+        if: false #Currently Disabled
         run: helm lint ./helm/dnavio-platform -f helm/dnavio-platform/values-pilot.yaml
 
   kubeconform:
@@ -61,14 +60,8 @@ jobs:
             --set keycloak.adminPassword=placeholder \
             --set minio.rootPassword=placeholder \
             | kubeconform -strict -summary -kubernetes-version 1.30.0 -
-      - name: Validate rendered chart (integration)
-        run: |
-          helm template dnavio-platform ./helm/dnavio-platform \
-            -f helm/dnavio-platform/values-integration.yaml \
-            --set keycloak.adminPassword=placeholder \
-            --set minio.rootPassword=placeholder \
-            | kubeconform -strict -summary -kubernetes-version 1.30.0 -
       - name: Validate rendered chart (pilot)
+        if: false #Currently Disabled
         run: |
           helm template dnavio-platform ./helm/dnavio-platform \
             -f helm/dnavio-platform/values-pilot.yaml \
