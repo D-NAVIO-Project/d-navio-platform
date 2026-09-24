@@ -94,6 +94,7 @@ jobs:
           test -x scripts/kafka/list-topics.sh
           test -x scripts/kafka/produce-test-message.sh
           test -x scripts/kafka/consume-topic.sh
+          test -x scripts/tests/t42-integration-smoke.sh
 
   check-docs:
     name: Documentation presence
