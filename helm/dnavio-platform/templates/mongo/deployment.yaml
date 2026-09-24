@@ -1,0 +1,96 @@
+{{- if .Values.mongo.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongo
+  labels:
+    {{- include "dnavio-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mongo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "dnavio-platform.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: mongo
+  strategy:
+    # RWO volume — old pod must release it before the new one mounts.
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        {{- include "dnavio-platform.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: mongo
+    spec:
+      enableServiceLinks: false
+      restartPolicy: Always
+      containers:
+        - name: mongo
+          image: "{{ .Values.mongo.image.repository }}:{{ .Values.mongo.image.tag }}"
+          # The image entrypoint prefixes flag-style args with mongod, and adds
+          # --auth because a root user is configured. WiredTiger would otherwise
+          # size its cache from host RAM, not the container limit.
+          args:
+            - --wiredTigerCacheSizeGB
+            - {{ .Values.mongo.wiredTigerCacheSizeGB | quote }}
+          ports:
+            - name: mongo
+              containerPort: 27017
+              protocol: TCP
+          env:
+            - name: MONGO_INITDB_ROOT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: dnavio-datastores
+                  key: mongo-root-user
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: dnavio-datastores
+                  key: mongo-root-password
+            # Read by init/00-app-user.js to create the application user.
+            - name: MONGO_APP_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: dnavio-datastores
+                  key: mongo-app-user
+            - name: MONGO_APP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: dnavio-datastores
+                  key: mongo-app-password
+            - name: MONGO_APP_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: dnavio-datastores
+                  key: mongo-database
+          # ping needs no authentication, so the probe carries no credentials.
+          readinessProbe:
+            exec:
+              command: ["mongosh", "--quiet", "--eval", "db.adminCommand({ping:1}).ok"]
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            timeoutSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["mongosh", "--quiet", "--eval", "db.adminCommand({ping:1}).ok"]
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.mongo.resources | nindent 12 }}
+          volumeMounts:
+            - name: mongo-data
+              mountPath: /data/db
+            # Runs once, on first start of an empty volume, in lexical order.
+            - name: mongo-init
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+      volumes:
+        - name: mongo-data
+          persistentVolumeClaim:
+            claimName: mongo-data
+        - name: mongo-init
+          configMap:
+            name: mongo-init
+{{- end }}

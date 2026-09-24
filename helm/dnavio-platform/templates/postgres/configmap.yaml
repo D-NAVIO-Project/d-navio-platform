@@ -1,0 +1,13 @@
+{{- if .Values.postgres.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  labels:
+    {{- include "dnavio-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+data:
+  # T4.2 relational schema — synced copy, see files/datastores/README.md.
+  001_schema.sql: |-
+    {{- .Files.Get "files/datastores/postgres/001_schema.sql" | nindent 4 }}
+{{- end }}

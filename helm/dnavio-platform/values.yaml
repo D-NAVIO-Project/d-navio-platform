@@ -23,19 +23,55 @@ kafka:
     nodePort: 30094
   # Topic definitions — consumed by the post-install Job and by dependent services.
   # Add new topics here; the Job is idempotent (--if-not-exists).
+  # Optional `config` is applied with kafka-configs --alter on every deploy.
+  # NOTE: values-pilot.yaml replaces this whole list (Helm does not merge
+  # lists) — add new topics there too.
+  #
+  # Retention budget: telemetry is high-volume (a full T4.2 pilot replay is
+  # ~7.5M records), so the telemetry topics are size-capped per partition to
+  # keep the broker volume from filling. The durable copy of telemetry is the
+  # DML's Postgres/Mongo, not Kafka. retention.bytes is enforced per closed
+  # segment, hence the smaller segment.bytes.
   topics:
     - name: dnavio.dml.telemetry.raw
       partitions: 1
       replicationFactor: 1
+      config: &telemetryRetention
+        retention.ms: 604800000       # 7 days
+        retention.bytes: 536870912    # 512 MiB per partition
+        segment.bytes: 67108864       # 64 MiB
     - name: dnavio.dml.telemetry.normalized
       partitions: 1
       replicationFactor: 1
+      config: *telemetryRetention
     - name: dnavio.frs.failures.reported
       partitions: 1
       replicationFactor: 1
+      config: &retainForever
+        retention.ms: -1              # failure records are kept indefinitely (low volume)
     - name: dnavio.dml.deadletter
       partitions: 1
       replicationFactor: 1
+      config: &deadletterRetention
+        retention.ms: 2592000000      # 30 days (the DML also archives DLQ records in Mongo)
+        retention.bytes: 134217728    # 128 MiB per partition
+        segment.bytes: 67108864
+    # FRS -> HYDRA root-node probability packages (T4.2 hydra-packager).
+    - name: dnavio.frs.hydra.probability-update
+      partitions: 1
+      replicationFactor: 1
+      config: &thirtyDays
+        retention.ms: 2592000000
+    # Inbound to FRS (T4.2 frs-api consumes). No producer yet — pre-created
+    # so consumers subscribe cleanly and the topics get platform settings
+    # rather than broker auto-create defaults.
+    - name: dnavio.hydra.riskscores
+      partitions: 1
+      replicationFactor: 1
+    - name: dnavio.frs.incidents.cyber
+      partitions: 1
+      replicationFactor: 1
+      config: *retainForever
     # Mock restricted topic: demonstrates enforced ACLs. Only the admin
     # identity may write (see kafka.acls below).
     - name: dnavio.ops.admin-audit
@@ -76,9 +112,22 @@ keycloak:
     size: 1Gi
   # Identities and realm roles are provisioned by the bootstrap Job following
   # docs/operations/rbac-access-model.md: per-component service accounts
-  # (svc-dml, svc-frs, svc-dynamo) and human realm roles (operator, analyst,
-  # integrator, admin). Kafka ACL enforcement is deferred until topic
-  # contracts are confirmed.
+  # (svc-dml, svc-frs, svc-dynamo, svc-admin) and human realm roles (operator,
+  # analyst, integrator, admin). Kafka ACLs are enforced only for topics listed
+  # in kafka.acls; all other topics accept any authenticated client.
+  #
+  # Service-account clients whose secret the PLATFORM manages: generated on
+  # first install, kept stable across upgrades, stored in the
+  # dnavio-component-credentials Secret (<clientId>-client-id /
+  # <clientId>-client-secret) and reconciled into Keycloak by the bootstrap Job.
+  # In-cluster components (T4.2 DML/FRS) mount it instead of an operator
+  # fetching secrets by hand. Set `secret` to override (e.g. from CI).
+  # Clients not listed here keep a Keycloak-generated secret.
+  componentClients:
+    - clientId: svc-dml   # T4.2 ingest-api, stream-processor
+      secret: ""
+    - clientId: svc-frs   # T4.2 frs-api, frs-derive, hydra-packager
+      secret: ""
   clients:
     # Confidential client used by D-NAVIO services and the Kafka scripts/Job to
     # obtain tokens (client credentials grant). The realm-bootstrap Job reconciles
@@ -98,6 +147,57 @@ minio:
   rootPassword: ""
   storage:
     size: 10Gi
+
+# --- Shared datastores (D4.1 §6.1.2: relational + document store) ---
+# Hosted by the platform so components integrate against one managed pair of
+# stores. The initial schema is the T4.2 (DML/FRS) schema, synced into
+# files/datastores/ — see the README there. Init scripts run only on an EMPTY
+# volume; later schema changes need a migration.
+#
+# Credentials are generated on first install and kept stable across upgrades
+# in the dnavio-datastores Secret (helm.sh/resource-policy: keep). Components
+# read ready-made connection strings from it: postgres-dsn, mongo-uri.
+# Set the password fields only to override (e.g. from CI). Never commit values.
+postgres:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "16-alpine"
+  username: dnavio
+  database: dnavio
+  password: ""
+  storage:
+    size: 10Gi
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "768Mi"
+
+mongo:
+  enabled: true
+  image:
+    repository: mongo
+    tag: "7.0"
+  rootUsername: admin
+  rootPassword: ""
+  # Least-privilege application user (readWrite on `database` only) that
+  # components connect as — created by files/datastores/mongo/00-app-user.js.
+  appUsername: dnavio
+  appPassword: ""
+  database: dnavio
+  # Keep well under the memory limit; WiredTiger would otherwise size its
+  # cache from host RAM.
+  wiredTigerCacheSizeGB: "0.25"
+  storage:
+    size: 5Gi
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "768Mi"
 
 testProducer:
   enabled: false

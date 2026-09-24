@@ -1,0 +1,20 @@
+{{- if .Values.mongo.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  # Fixed name: components reach the document store at mongo:27017.
+  name: mongo
+  labels:
+    {{- include "dnavio-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mongo
+spec:
+  type: ClusterIP
+  ports:
+    - name: mongo
+      port: 27017
+      targetPort: 27017
+      protocol: TCP
+  selector:
+    {{- include "dnavio-platform.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: mongo
+{{- end }}

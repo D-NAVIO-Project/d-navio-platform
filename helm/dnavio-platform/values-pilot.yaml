@@ -1,5 +1,5 @@
 # Pilot / demo environment overrides.
-# Distinct NodePorts from dev/integration — all three share the same VM node.
+# Distinct NodePorts from dev — both environments share the same VM node.
 keycloak:
   hostname: "https://147.102.6.143:32443"
   service:
@@ -12,20 +12,57 @@ kafka:
     nodePort: 32094
   storage:
     size: 10Gi
+  # Replaces the whole default topic list (Helm does not merge lists), so it
+  # must list EVERY topic. retention.bytes is per partition: 3 x 512 MiB for
+  # each telemetry topic.
   topics:
     - name: dnavio.dml.telemetry.raw
       partitions: 3
       replicationFactor: 1
+      config: &telemetryRetention
+        retention.ms: 604800000       # 7 days
+        retention.bytes: 536870912    # 512 MiB per partition
+        segment.bytes: 67108864       # 64 MiB
     - name: dnavio.dml.telemetry.normalized
       partitions: 3
       replicationFactor: 1
+      config: *telemetryRetention
     - name: dnavio.frs.failures.reported
       partitions: 2
       replicationFactor: 1
+      config: &retainForever
+        retention.ms: -1
     - name: dnavio.dml.deadletter
       partitions: 2
+      replicationFactor: 1
+      config:
+        retention.ms: 2592000000      # 30 days
+        retention.bytes: 134217728    # 128 MiB per partition
+        segment.bytes: 67108864
+    - name: dnavio.frs.hydra.probability-update
+      partitions: 1
+      replicationFactor: 1
+      config:
+        retention.ms: 2592000000
+    - name: dnavio.hydra.riskscores
+      partitions: 1
+      replicationFactor: 1
+    - name: dnavio.frs.incidents.cyber
+      partitions: 1
+      replicationFactor: 1
+      config: *retainForever
+    - name: dnavio.ops.admin-audit
+      partitions: 1
       replicationFactor: 1
 
 minio:
   storage:
     size: 20Gi
+
+postgres:
+  storage:
+    size: 20Gi
+
+mongo:
+  storage:
+    size: 10Gi

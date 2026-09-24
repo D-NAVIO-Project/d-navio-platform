@@ -74,5 +74,19 @@ spec:
                 --partitions {{ .partitions }} \
                 --replication-factor {{ .replicationFactor }} \
                 --if-not-exists
+              {{- if .config }}
+              {{- $pairs := list }}
+              {{- range $k, $v := .config }}
+              {{- /* YAML numbers arrive as float64; print them as integers, not 5.36870912e+08. */}}
+              {{- $val := ternary (int64 $v | toString) (toString $v) (kindIs "float64" $v) }}
+              {{- $pairs = append $pairs (printf "%s=%s" $k $val) }}
               {{- end }}
-              echo "All D-NAVIO topics created."
+              # Re-applied on every deploy (--alter is idempotent), so existing
+              # topics pick up config changes too.
+              kafka-configs --bootstrap-server kafka:9092 \
+                --command-config /tmp/client.properties \
+                --alter --entity-type topics --entity-name {{ .name }} \
+                --add-config {{ join "," $pairs }}
+              {{- end }}
+              {{- end }}
+              echo "All D-NAVIO topics created and configured."

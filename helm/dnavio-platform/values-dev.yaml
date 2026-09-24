@@ -7,5 +7,16 @@ minio:
   storage:
     size: 5Gi
 
+# Sized for a full T4.2 pilot replay (measured: Postgres ~3.3 GB,
+# Mongo ~0.8 GB) with headroom. These PVCs cannot be resized in place on this
+# cluster, so size generously up front.
+postgres:
+  storage:
+    size: 8Gi
+
+mongo:
+  storage:
+    size: 4Gi
+
 testProducer:
   enabled: true

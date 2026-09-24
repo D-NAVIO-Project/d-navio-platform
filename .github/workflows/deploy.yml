@@ -76,77 +76,17 @@ jobs:
           kubectl rollout status deployment/keycloak -n dnavio-dev --timeout=5m
           kubectl rollout status deployment/minio -n dnavio-dev --timeout=3m
           kubectl rollout status deployment/kafka -n dnavio-dev --timeout=10m
-
-  deploy-integration:
-    name: Deploy → integration
-    needs: deploy-dev
-    if: ${{ needs.deploy-dev.result == 'success' }}
-    runs-on: [self-hosted, dnavio-vm]
-    environment: integration
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set kubectl context
-        run: kubectl config use-context kubernetes-admin@kubernetes
-
-      - name: Migrate manually-applied resources to Helm
-        run: |
-          NS=dnavio-integration
-          RELEASE=dnavio-platform
-          if ! helm status "$RELEASE" -n "$NS" > /dev/null 2>&1; then
-            echo "No Helm release found — removing manually-applied resources before install"
-            kubectl delete deployment kafka keycloak minio \
-              -n "$NS" --ignore-not-found --timeout=90s || true
-            kubectl delete pvc kafka-data minio-data \
-              -n "$NS" --ignore-not-found --timeout=90s || true
-          fi
-
-      - name: Unlock stuck Helm release
-        run: |
-          NS=dnavio-integration
-          RELEASE=dnavio-platform
-          STATUS=$(helm status "$RELEASE" -n "$NS" -o json 2>/dev/null \
-            | python3 -c "import sys,json; print(json.load(sys.stdin)['info']['status'])" 2>/dev/null || echo "not-found")
-          echo "Helm release status: $STATUS"
-          if [[ "$STATUS" == "pending-install" ]]; then
-            helm uninstall "$RELEASE" -n "$NS" || true
-          elif [[ "$STATUS" == "pending-upgrade" || "$STATUS" == "pending-rollback" ]]; then
-            helm rollback "$RELEASE" -n "$NS" || true
-          fi
-
-      - name: Deploy to dnavio-integration
-        env:
-          KEYCLOAK_PASS: ${{ secrets.KEYCLOAK_ADMIN_PASSWORD }}
-          MINIO_PASS: ${{ secrets.MINIO_ROOT_PASSWORD }}
-          DNAVIO_API_SECRET: ${{ secrets.DNAVIO_API_CLIENT_SECRET }}
-        run: |
-          tmp=$(mktemp /tmp/secrets-XXXXXX.yaml)
-          trap "rm -f $tmp" EXIT
-          python3 -c "
-          import os, json
-          print('keycloak:')
-          print('  adminPassword: ' + json.dumps(os.environ['KEYCLOAK_PASS']))
-          print('  clients:')
-          print('    dnavioApi:')
-          print('      secret: ' + json.dumps(os.environ['DNAVIO_API_SECRET']))
-          print('minio:')
-          print('  rootPassword: ' + json.dumps(os.environ['MINIO_PASS']))
-          " > "$tmp"
-          helm upgrade --install dnavio-platform ./helm/dnavio-platform \
-            --namespace dnavio-integration \
-            --create-namespace \
-            -f helm/dnavio-platform/values-integration.yaml \
-            -f "$tmp" \
-            --timeout 15m
-          kubectl rollout status deployment/keycloak -n dnavio-integration --timeout=5m
-          kubectl rollout status deployment/minio -n dnavio-integration --timeout=3m
-          kubectl rollout status deployment/kafka -n dnavio-integration --timeout=10m
+          # Shared datastores are optional (postgres/mongo.enabled) - check only if deployed.
+          for d in postgres mongo; do
+            if kubectl get deployment "$d" -n dnavio-dev > /dev/null 2>&1; then
+              kubectl rollout status deployment/"$d" -n dnavio-dev --timeout=5m
+            fi
+          done
 
   deploy-pilot:
     name: Deploy → pilot
-    needs: deploy-integration
-    if: ${{ needs.deploy-integration.result == 'success' }}
+    needs: deploy-dev
+    if: ${{ needs.deploy-dev.result == 'success' }}
     runs-on: [self-hosted, dnavio-vm]
     environment: pilot
 
@@ -208,3 +148,9 @@ jobs:
           kubectl rollout status deployment/keycloak -n dnavio-pilot --timeout=5m
           kubectl rollout status deployment/minio -n dnavio-pilot --timeout=3m
           kubectl rollout status deployment/kafka -n dnavio-pilot --timeout=10m
+          # Shared datastores are optional (postgres/mongo.enabled) - check only if deployed.
+          for d in postgres mongo; do
+            if kubectl get deployment "$d" -n dnavio-pilot > /dev/null 2>&1; then
+              kubectl rollout status deployment/"$d" -n dnavio-pilot --timeout=5m
+            fi
+          done

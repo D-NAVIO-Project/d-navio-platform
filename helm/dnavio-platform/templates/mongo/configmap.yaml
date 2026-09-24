@@ -1,0 +1,16 @@
+{{- if .Values.mongo.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mongo-init
+  labels:
+    {{- include "dnavio-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mongo
+data:
+  # Platform-owned: least-privilege application user. Runs first.
+  00-app-user.js: |-
+    {{- .Files.Get "files/datastores/mongo/00-app-user.js" | nindent 4 }}
+  # T4.2 collections and indexes — synced copy, see files/datastores/README.md.
+  10-t42-init.js: |-
+    {{- .Files.Get "files/datastores/mongo/10-t42-init.js" | nindent 4 }}
+{{- end }}

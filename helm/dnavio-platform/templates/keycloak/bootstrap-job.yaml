@@ -94,11 +94,17 @@ spec:
               fi
 
               # --- RBAC identities (feat/rbac-access-model) ---
-              # Component service accounts. Created without a fixed secret —
-              # Keycloak generates one, retrieved/rotated when the component
-              # onboards. ACL enforcement is NOT enabled yet (authn-only broker).
+              # Component service accounts. By default created without a fixed
+              # secret — Keycloak generates one, retrieved when the component
+              # onboards. Clients listed in keycloak.componentClients instead get
+              # the secret from the dnavio-component-credentials Secret (optional
+              # 2nd argument), so in-cluster components can mount it directly.
               ensure_service_client() {
-                local cid="$1" existing
+                local cid="$1" secret="${2:-}" existing
+                local -a secret_arg=()
+                if [ -n "${secret}" ]; then
+                  secret_arg=(-s "secret=${secret}")
+                fi
                 existing=$("$KCADM" get clients -r "${REALM}" -q clientId="${cid}" \
                   --fields id --format csv --noquotes 2>/dev/null | tail -n1 | tr -d '\r')
                 if [ -z "${existing}" ]; then
@@ -110,7 +116,8 @@ spec:
                     -s publicClient=false \
                     -s standardFlowEnabled=false \
                     -s directAccessGrantsEnabled=false \
-                    -s serviceAccountsEnabled=true
+                    -s serviceAccountsEnabled=true \
+                    "${secret_arg[@]}"
                 else
                   echo "Reconciling service-account client '${cid}' (${existing})."
                   "$KCADM" update "clients/${existing}" -r "${REALM}" \
@@ -119,7 +126,8 @@ spec:
                     -s publicClient=false \
                     -s standardFlowEnabled=false \
                     -s directAccessGrantsEnabled=false \
-                    -s serviceAccountsEnabled=true
+                    -s serviceAccountsEnabled=true \
+                    "${secret_arg[@]}"
                 fi
               }
 
@@ -133,8 +141,13 @@ spec:
                 fi
               }
 
+              CREDS_DIR=/etc/dnavio-component-credentials
               for c in svc-dml svc-frs svc-dynamo svc-admin; do
-                ensure_service_client "$c"
+                if [ -f "${CREDS_DIR}/${c}-client-secret" ]; then
+                  ensure_service_client "$c" "$(cat "${CREDS_DIR}/${c}-client-secret")"
+                else
+                  ensure_service_client "$c"
+                fi
               done
               for r in operator analyst integrator admin; do
                 ensure_realm_role "$r"
@@ -150,3 +163,13 @@ spec:
                 --rolename admin
 
               echo "Keycloak realm bootstrap complete."
+          {{- if .Values.keycloak.componentClients }}
+          volumeMounts:
+            - name: component-credentials
+              mountPath: /etc/dnavio-component-credentials
+              readOnly: true
+      volumes:
+        - name: component-credentials
+          secret:
+            secretName: dnavio-component-credentials
+          {{- end }}
