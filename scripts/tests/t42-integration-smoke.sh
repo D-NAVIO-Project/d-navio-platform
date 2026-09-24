@@ -133,15 +133,18 @@ topics="$(kafka_admin kafka-topics --bootstrap-server 127.0.0.1:9091 --list)"
 for t in dnavio.dml.telemetry.raw dnavio.dml.telemetry.normalized dnavio.dml.deadletter \
          dnavio.frs.failures.reported dnavio.frs.hydra.probability-update \
          dnavio.hydra.riskscores dnavio.frs.incidents.cyber dnavio.ops.admin-audit; do
-  if printf '%s\n' "$topics" | grep -qx "$t"; then pass "topic $t exists"; else fail "topic $t missing"; fi
+  # Capture-then-match, never `cmd | grep -q`: grep -q exits at the first
+  # match, the writer gets SIGPIPE, and pipefail turns a match into a failure.
+  if grep -qx "$t" <<< "$topics"; then pass "topic $t exists"; else fail "topic $t missing"; fi
 done
 check_config() {
-  if kafka_admin kafka-configs --bootstrap-server 127.0.0.1:9091 --describe \
-       --entity-type topics --entity-name "$1" | grep -q "$2"; then
-    pass "$1 has $2"
-  else
-    fail "$1 lacks $2"
-  fi
+  local cfg
+  cfg="$(kafka_admin kafka-configs --bootstrap-server 127.0.0.1:9091 --describe \
+           --entity-type topics --entity-name "$1")"
+  case "$cfg" in
+    *"$2"*) pass "$1 has $2" ;;
+    *) fail "$1 lacks $2" ;;
+  esac
 }
 check_config dnavio.dml.telemetry.raw retention.bytes=536870912
 check_config dnavio.frs.failures.reported retention.ms=-1
