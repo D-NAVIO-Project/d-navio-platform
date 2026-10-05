@@ -76,12 +76,6 @@ jobs:
           kubectl rollout status deployment/keycloak -n dnavio-dev --timeout=5m
           kubectl rollout status deployment/minio -n dnavio-dev --timeout=3m
           kubectl rollout status deployment/kafka -n dnavio-dev --timeout=10m
-          # Shared datastores are optional (postgres/mongo.enabled) - check only if deployed.
-          for d in postgres mongo; do
-            if kubectl get deployment "$d" -n dnavio-dev > /dev/null 2>&1; then
-              kubectl rollout status deployment/"$d" -n dnavio-dev --timeout=5m
-            fi
-          done
 
   deploy-pilot:
     name: Deploy → pilot
@@ -148,9 +142,3 @@ jobs:
           kubectl rollout status deployment/keycloak -n dnavio-pilot --timeout=5m
           kubectl rollout status deployment/minio -n dnavio-pilot --timeout=3m
           kubectl rollout status deployment/kafka -n dnavio-pilot --timeout=10m
-          # Shared datastores are optional (postgres/mongo.enabled) - check only if deployed.
-          for d in postgres mongo; do
-            if kubectl get deployment "$d" -n dnavio-pilot > /dev/null 2>&1; then
-              kubectl rollout status deployment/"$d" -n dnavio-pilot --timeout=5m
-            fi
-          done

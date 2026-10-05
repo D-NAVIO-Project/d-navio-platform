@@ -58,11 +58,3 @@ kafka:
 minio:
   storage:
     size: 20Gi
-
-postgres:
-  storage:
-    size: 20Gi
-
-mongo:
-  storage:
-    size: 10Gi

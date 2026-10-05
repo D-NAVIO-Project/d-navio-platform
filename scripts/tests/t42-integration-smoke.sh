@@ -1,17 +1,15 @@
 #!/usr/bin/env bash
 # Smoke test for the platform services that T4.2 (DML/FRS) depends on.
+# (T4.2 runs its own Postgres and MongoDB; those are not tested here.)
 #
-# Exercises the same paths a T4.2 pod uses — from throwaway pods inside the
-# namespace, reading credentials only from the platform Secrets:
-#   - Postgres via the postgres-dsn connection string (auth, T4.2 schema, write)
-#   - Mongo via the mongo-uri connection string (auth, collections, write,
-#     least privilege)
+# Exercises the same path a T4.2 pod uses — from throwaway pods inside the
+# namespace, reading credentials only from the platform Secret:
 #   - Kafka on kafka:9092 (SASL_PLAINTEXT / OAUTHBEARER) as svc-dml and
 #     svc-frs, including an ACL denial on the admin-restricted topic
 # plus deployment health, hook Jobs, memory limits, Secrets, topics, retention.
 #
-# Leaves no data behind: Kafka traffic goes to a temporary topic, Postgres uses
-# a temp table, Mongo a scratch collection — all removed at the end.
+# Leaves no data behind: Kafka traffic goes to a temporary topic, deleted at
+# the end.
 #
 # Usage: scripts/tests/t42-integration-smoke.sh [namespace]   (default dnavio-dev)
 # Needs kubectl with admin access to the namespace. Exits 1 if any check fails.
@@ -87,7 +85,7 @@ printf 'T4.2 integration smoke test — namespace %s, run %s\n' "$NS" "$RUN_ID"
 
 # ---------------------------------------------------------------------------
 section "Deployments ready"
-for d in keycloak kafka minio postgres mongo; do
+for d in keycloak kafka minio; do
   if kubectl rollout status "deployment/$d" -n "$NS" --timeout=120s >/dev/null 2>&1; then
     pass "$d rolled out and ready"
   else
@@ -105,7 +103,7 @@ for j in keycloak-realm-bootstrap kafka-topics-init kafka-acls-init; do
 done
 
 section "Memory limits"
-for d in keycloak kafka minio postgres mongo; do
+for d in keycloak kafka minio; do
   lim="$(kubectl get deploy "$d" -n "$NS" \
     -o jsonpath='{.spec.template.spec.containers[0].resources.limits.memory}' 2>/dev/null)"
   if [ -n "$lim" ]; then pass "$d limited to $lim"; else fail "$d has no memory limit"; fi
@@ -124,7 +122,6 @@ check_keys() {
     esac
   done
 }
-check_keys dnavio-datastores postgres-dsn mongo-uri
 check_keys dnavio-component-credentials svc-dml-client-id svc-dml-client-secret \
   svc-frs-client-id svc-frs-client-secret
 
@@ -148,119 +145,6 @@ check_config() {
 }
 check_config dnavio.dml.telemetry.raw retention.bytes=536870912
 check_config dnavio.frs.failures.reported retention.ms=-1
-
-# ---------------------------------------------------------------------------
-section "Postgres, as a component would connect (postgres-dsn -> postgres:5432)"
-render "smoke-pg-${RUN_ID}" > "$WORK/pg.yaml" <<'YAML'
-apiVersion: v1
-kind: Pod
-metadata:
-  name: __NAME__
-  labels:
-    dnavio.smoke/run: "__RUN__"
-spec:
-  restartPolicy: Never
-  enableServiceLinks: false
-  activeDeadlineSeconds: 240
-  containers:
-    - name: check
-      image: postgres:16-alpine
-      imagePullPolicy: IfNotPresent
-      env:
-        - name: PG_DSN
-          valueFrom:
-            secretKeyRef:
-              name: dnavio-datastores
-              key: postgres-dsn
-      command:
-        - /bin/sh
-        - -c
-        - |
-          rc=0
-          if who=$(psql "$PG_DSN" -qtAc "select current_user" 2>&1); then
-            echo "CHECK PASS postgres: authenticated via postgres-dsn through the Service (user $who)"
-          else
-            echo "CHECK FAIL postgres: cannot connect via postgres-dsn: $who"
-            exit 1
-          fi
-          n=$(psql "$PG_DSN" -qtAc "select count(*) from information_schema.tables where table_schema='dnavio'" 2>&1)
-          if [ "${n:-0}" -gt 0 ] 2>/dev/null; then
-            echo "CHECK PASS postgres: T4.2 schema loaded ($n tables/views in schema dnavio)"
-            echo "INFO $(psql "$PG_DSN" -qtAc "select string_agg(table_name, ', ' order by table_name) from information_schema.tables where table_schema='dnavio'")"
-          else
-            echo "CHECK FAIL postgres: T4.2 schema missing (got: $n)"
-            rc=1
-          fi
-          rt=$(psql "$PG_DSN" -qtA -v ON_ERROR_STOP=1 \
-                 -c "create temp table smoke(v text)" \
-                 -c "insert into smoke values ('roundtrip')" \
-                 -c "select v from smoke" 2>&1)
-          case "$rt" in
-            *roundtrip*) echo "CHECK PASS postgres: write/read round trip (temp table)" ;;
-            *) echo "CHECK FAIL postgres: write/read failed: $rt"; rc=1 ;;
-          esac
-          exit $rc
-YAML
-
-run_pod "smoke-pg-${RUN_ID}" < "$WORK/pg.yaml"
-
-section "Mongo, as a component would connect (mongo-uri -> mongo:27017)"
-render "smoke-mongo-${RUN_ID}" > "$WORK/mongo.yaml" <<'YAML'
-apiVersion: v1
-kind: Pod
-metadata:
-  name: __NAME__
-  labels:
-    dnavio.smoke/run: "__RUN__"
-spec:
-  restartPolicy: Never
-  enableServiceLinks: false
-  activeDeadlineSeconds: 240
-  containers:
-    - name: check
-      image: mongo:7.0
-      imagePullPolicy: IfNotPresent
-      env:
-        - name: MONGO_URI
-          valueFrom:
-            secretKeyRef:
-              name: dnavio-datastores
-              key: mongo-uri
-      command:
-        - /bin/sh
-        - -c
-        - |
-          cat > /tmp/smoke.js <<'JS'
-          var failed = false;
-          function check(ok, msg) {
-            print((ok ? 'CHECK PASS ' : 'CHECK FAIL ') + 'mongo: ' + msg);
-            if (!ok) { failed = true; }
-          }
-          check(db.getName() === 'dnavio',
-                'authenticated via mongo-uri as the app user (database ' + db.getName() + ')');
-          var cols = db.getCollectionNames();
-          var want = ['iot_raw_event', 'failure_evidence', 'incident_metadata', 'deadletter'];
-          var missing = want.filter(function (c) { return cols.indexOf(c) < 0; });
-          check(missing.length === 0, missing.length === 0
-                ? 'T4.2 collections present (' + want.join(', ') + ')'
-                : 'T4.2 collections missing: ' + missing.join(', '));
-          var id = db.smoke_test.insertOne({ at: new Date() }).insertedId;
-          check(db.smoke_test.findOne({ _id: id }) !== null, 'write/read round trip (scratch collection)');
-          db.smoke_test.drop();
-          var denied = false;
-          try {
-            db.getSiblingDB('dnavio_smoke_forbidden').probe.insertOne({ a: 1 });
-            db.getSiblingDB('dnavio_smoke_forbidden').dropDatabase();
-          } catch (e) {
-            denied = /not authorized|unauthorized/i.test(String(e));
-          }
-          check(denied, 'least privilege: writing to another database is refused');
-          if (failed) { quit(1); }
-          JS
-          mongosh "$MONGO_URI" --quiet /tmp/smoke.js
-YAML
-
-run_pod "smoke-mongo-${RUN_ID}" < "$WORK/mongo.yaml"
 
 # ---------------------------------------------------------------------------
 section "Kafka, as T4.2 would connect (OAUTHBEARER on kafka:9092)"

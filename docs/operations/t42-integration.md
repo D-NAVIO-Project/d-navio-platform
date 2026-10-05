@@ -1,75 +1,72 @@
 # T4.2 (DML / FRS) Integration Contract
 
-How the T4.2 services (`D-NAVIO-Project/d-navio-t4.2`) run against the D-NAVIO
-platform instead of their own bundled broker and databases. The platform side
-is implemented in this chart; the **T4.2 side is not yet changed** — see
-[Required changes in d-navio-t4.2](#required-changes-in-d-navio-t42).
+How the T4.2 services (`D-NAVIO-Project/d-navio-t4.2`) run on the D-NAVIO
+platform. The platform side is in place; the **T4.2 side is not yet changed** —
+see [Required changes in d-navio-t4.2](#required-changes-in-d-navio-t42).
 
-T4.2 is deployed into the same namespace as the platform (`dnavio-dev`,
-`dnavio-pilot`), so every endpoint below is an in-cluster Service name.
+## Who runs what
+
+| | Run by | Notes |
+|---|---|---|
+| Message broker (Kafka), topics, ACLs | **Platform** | T4.2 drops its bundled Redpanda |
+| Identity provider (Keycloak), `svc-dml` / `svc-frs` | **Platform** | Credentials injected into T4.2 pods |
+| PostgreSQL and MongoDB | **T4.2** | With T4.2's schema, in T4.2's own chart |
+| T4.2 services | **T4.2** | Via `helm/dnavio-component` and the shared build/deploy workflows |
+
+Everything runs in the platform namespace (`dnavio-dev`, `dnavio-pilot`), so
+the endpoints below are in-cluster Service names.
 
 ## What the platform provides
 
-| Need | Platform endpoint | Notes |
-|------|-------------------|-------|
+| Need | Endpoint | Notes |
+|------|----------|-------|
 | Message broker | `kafka:9092` | INTERNAL listener: `SASL_PLAINTEXT`, mechanism `OAUTHBEARER` |
 | Token endpoint | `http://keycloak:8080/realms/d-navio/protocol/openid-connect/token` | client-credentials grant; tokens live 5 min |
-| Relational store | `postgres:5432`, database `dnavio` | PostgreSQL 16, T4.2 schema pre-loaded |
-| Document store | `mongo:27017`, database `dnavio` | MongoDB 7.0, auth enabled, T4.2 collections/indexes pre-created |
 | Topics | all T4.2 topics pre-created | incl. `dnavio.frs.hydra.probability-update`, `dnavio.hydra.riskscores`, `dnavio.frs.incidents.cyber` |
 
 The in-cluster token endpoint issues tokens whose `iss` is the pinned external
 hostname, which is what the broker validates — no extra configuration needed.
 
-### Credentials (Kubernetes Secrets in the same namespace)
+### Credentials
 
-| Secret | Keys | Use |
-|--------|------|-----|
-| `dnavio-component-credentials` | `svc-dml-client-id`, `svc-dml-client-secret`, `svc-frs-client-id`, `svc-frs-client-secret` | Kafka OAUTHBEARER client credentials |
-| `dnavio-datastores` | `postgres-dsn`, `mongo-uri` (plus the individual user/password/database keys) | Ready-made connection strings |
-
-Both are generated on first install and stay stable across upgrades
-(`helm.sh/resource-policy: keep`). The Mongo URI uses a least-privilege
-application user (`readWrite` on `dnavio` only), not root.
+Secret `dnavio-component-credentials` holds `svc-dml-client-id`,
+`svc-dml-client-secret`, `svc-frs-client-id` and `svc-frs-client-secret`. It
+is generated on first install and stays stable across upgrades. In the
+component values file these are referenced through the `credentials` alias,
+e.g. `credentials/svc-dml-client-secret`.
 
 ### Service → identity mapping
 
-| T4.2 service | Kafka | Identity | Postgres | Mongo |
-|--------------|-------|----------|----------|-------|
-| `ingest-api` | produce | `svc-dml` | yes | — |
-| `stream-processor` | consume + produce | `svc-dml` | yes | yes |
-| `frs-api` | consume + produce | `svc-frs` | yes | yes |
-| `frs-derive` | consume | `svc-frs` | yes | — |
-| `hydra-packager` | consume + produce | `svc-frs` | yes | — |
-| `query-api` | — | — | yes | yes |
-| `pilot-replayer`, `metis-connector` | — (HTTP to `ingest-api`) | — | — | — |
+| T4.2 service | Kafka | Identity |
+|--------------|-------|----------|
+| `ingest-api` | produce | `svc-dml` |
+| `stream-processor` | consume + produce | `svc-dml` |
+| `frs-api` | consume + produce | `svc-frs` |
+| `frs-derive` | consume | `svc-frs` |
+| `hydra-packager` | consume + produce | `svc-frs` |
+| `query-api` | — | — |
+| `pilot-replayer`, `metis-connector` | — (HTTP to `ingest-api`) | — |
 
 The broker derives the Kafka principal from the token's `azp` claim, so these
 appear as `User:svc-dml` / `User:svc-frs`. Topic ACLs are currently enforced
 only on `dnavio.ops.admin-audit`; every other topic accepts any authenticated
 client.
 
-### Environment wiring for a T4.2 Deployment
+## What T4.2 runs: its datastores
 
-```yaml
-env:
-  - name: DNAVIO_KAFKA_BROKERS
-    value: "kafka:9092"
-  - name: DNAVIO_POSTGRES_DSN
-    valueFrom: { secretKeyRef: { name: dnavio-datastores, key: postgres-dsn } }
-  - name: DNAVIO_MONGO_URI
-    valueFrom: { secretKeyRef: { name: dnavio-datastores, key: mongo-uri } }
-  - name: DNAVIO_MONGO_DB
-    value: "dnavio"
-  # Once T4.2 supports broker authentication (see below) — variable names are
-  # T4.2's choice:
-  - name: DNAVIO_KAFKA_CLIENT_ID
-    valueFrom: { secretKeyRef: { name: dnavio-component-credentials, key: svc-dml-client-id } }
-  - name: DNAVIO_KAFKA_CLIENT_SECRET
-    valueFrom: { secretKeyRef: { name: dnavio-component-credentials, key: svc-dml-client-secret } }
-  - name: DNAVIO_KAFKA_TOKEN_URL
-    value: "http://keycloak:8080/realms/d-navio/protocol/openid-connect/token"
-```
+T4.2 deploys its own PostgreSQL and MongoDB with its own chart (the component
+chart runs stateless services only). Requirements, because they share the
+platform namespace and VM:
+
+- **Names prefixed `t42-`** — e.g. Services `t42-postgres`, `t42-mongo`, and
+  their PVCs/ConfigMaps — so they cannot collide with other releases.
+- **Credentials in Secret `t42-secrets`** — e.g. keys `postgres-dsn` and
+  `mongo-uri` — never literal values in templates or values files. Services
+  read them through the `partner` alias: `partner/postgres-dsn`.
+- **Memory limits, readiness/liveness probes, and storage sized for the dev
+  VM.** A full replay measured Postgres ~3.3 GB and Mongo ~0.8 GB.
+- **Schema** is T4.2's: init scripts run only on an empty volume, so later
+  changes ship as migrations.
 
 ## Required changes in d-navio-t4.2
 
@@ -100,23 +97,24 @@ These are **not** made by the platform; they belong to the T4.2 owners.
 
    The METIS connector already implements client-credentials and can share
    the configuration pattern. In-cluster, no TLS is needed (`kafka:9092` is
-   `SASL_PLAINTEXT`).
+   `SASL_PLAINTEXT`). Suggested variable names (T4.2's choice):
+   `DNAVIO_KAFKA_CLIENT_ID`, `DNAVIO_KAFKA_CLIENT_SECRET`,
+   `DNAVIO_KAFKA_TOKEN_URL`.
 
-2. **Drop the bundled infrastructure from the T4.2 chart**: `redpanda-*`,
-   `postgres-*`, `mongo-*` templates and their PVCs/ConfigMaps. The platform
-   already owns `postgres`, `mongo`, `postgres-data` and `mongo-data` in the
-   same namespace, so Helm will refuse to install a second release that
-   declares them.
+2. **Drop Redpanda** from the T4.2 chart and point all services at
+   `kafka:9092`.
 
-3. **Remove hardcoded credentials.** The kompose templates embed
-   `postgres://dnavio:dnavio@postgres:5432/...`; use the `secretKeyRef`
-   wiring above.
+3. **Datastores** as described above: `t42-` names, credentials in
+   `t42-secrets` instead of the hardcoded `postgres://dnavio:dnavio@...`,
+   limits and probes.
 
-4. **Fix the deploy workflow.** `deploy.yml` points at `./helm/frs-platform`,
-   which does not exist (the chart is `deploy/compose/dnavio-t42/`); the values
-   files are empty; images (`ingest-api`, …) have no build/publish step and no
-   `imagePullPolicy`, so pods cannot start. Resource limits and probes are
-   also missing.
+4. **Services via the component chart.** Add `deploy/dnavio-values.yaml` —
+   `helm/dnavio-component/examples/t42-values.yaml` is a ready-made draft for
+   the six core services — and a workflow calling the shared
+   `build-component.yml` and `deploy-component.yml` (example in
+   `helm/dnavio-component/README.md`). This replaces the current `deploy.yml`,
+   which points at `./helm/frs-platform` (does not exist) and has no image
+   build.
 
 5. **Pace the replay in shared environments.** A full replay publishes
    ~7.5M records in ~5 minutes while persistence drains at ~7,400/s. The
@@ -125,9 +123,10 @@ These are **not** made by the platform; they belong to the T4.2 owners.
    `stream-processor` consumes them. Use `DNAVIO_REPLAY_SPEED` or
    `DNAVIO_REPLAY_MAX_ROWS` on dev/pilot.
 
-## Schema ownership
+## Testing
 
-The initial schema is a byte-identical copy of T4.2's `db/` scripts, pinned to
-a commit — see `helm/dnavio-platform/files/datastores/README.md`. Init scripts
-only run on an **empty** volume, so once a store holds data, schema changes
-must ship as migrations (owned by T4.2) rather than edits to the copied files.
+`scripts/tests/t42-integration-smoke.sh` checks the platform side from inside
+the namespace: platform deployments and hook Jobs, memory limits, the
+credentials Secret, topics and retention, and Kafka authentication as
+`svc-dml` and `svc-frs` (including an ACL denial). T4.2's own datastores are
+outside its scope.

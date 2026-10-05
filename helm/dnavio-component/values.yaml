@@ -23,10 +23,10 @@ priorityClassName: ""
 # Partners use the aliases only, never the Secret names.
 platform:
   secrets:
-    datastores: dnavio-datastores                 # postgres-dsn, mongo-uri, ...
     credentials: dnavio-component-credentials     # <client>-client-id / -client-secret
-    # partner: resolved to "<partner>-secrets" — the partner's own external
-    # credentials (e.g. a third-party API key), created by NTUA on request.
+    # partner: resolved to "<partner>-secrets" — the partner's own credentials:
+    # its datastores (e.g. postgres-dsn) and third-party keys. Created by the
+    # partner's own chart, or by NTUA on request.
 
 # One entry per service. Example:
 #
@@ -45,5 +45,6 @@ platform:
 #     env:                        # literal, non-secret settings
 #       DNAVIO_COMPONENT: ingest-api
 #     secretEnv:                  # <alias>/<key>, see platform.secrets
-#       DNAVIO_POSTGRES_DSN: datastores/postgres-dsn
+#       DNAVIO_KAFKA_CLIENT_SECRET: credentials/svc-dml-client-secret
+#       DNAVIO_POSTGRES_DSN: partner/postgres-dsn
 components: []

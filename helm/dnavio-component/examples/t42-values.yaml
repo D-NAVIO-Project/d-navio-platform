@@ -5,12 +5,15 @@
 # docs/operations/t42-integration.md; T4.2 reads them once it adds broker
 # authentication.
 #
+# Datastores: T4.2 runs its own Postgres and MongoDB (its own chart, named
+# t42-postgres / t42-mongo). Their connection strings come from Secret
+# t42-secrets (keys postgres-dsn, mongo-uri) via the `partner` alias.
+#
 # Not included yet:
 #   pilot-replayer   needs the pilot datasets mounted as a volume, which the
 #                    component chart does not support yet.
-#   metis-connector  needs METIS credentials: these would come from
-#                    secretEnv `partner/<key>` (Secret t42-secrets, created by
-#                    NTUA on request).
+#   metis-connector  needs METIS credentials: add them to Secret t42-secrets
+#                    and reference them as secretEnv `partner/<key>`.
 partner: t42
 
 components:
@@ -25,7 +28,7 @@ components:
       DNAVIO_HTTP_ADDR: ":8081"
       DNAVIO_KAFKA_BROKERS: kafka:9092
     secretEnv:
-      DNAVIO_POSTGRES_DSN: datastores/postgres-dsn
+      DNAVIO_POSTGRES_DSN: partner/postgres-dsn
       DNAVIO_KAFKA_CLIENT_ID: credentials/svc-dml-client-id
       DNAVIO_KAFKA_CLIENT_SECRET: credentials/svc-dml-client-secret
 
@@ -41,8 +44,8 @@ components:
       DNAVIO_KAFKA_BROKERS: kafka:9092
       DNAVIO_MONGO_DB: dnavio
     secretEnv:
-      DNAVIO_POSTGRES_DSN: datastores/postgres-dsn
-      DNAVIO_MONGO_URI: datastores/mongo-uri
+      DNAVIO_POSTGRES_DSN: partner/postgres-dsn
+      DNAVIO_MONGO_URI: partner/mongo-uri
       DNAVIO_KAFKA_CLIENT_ID: credentials/svc-dml-client-id
       DNAVIO_KAFKA_CLIENT_SECRET: credentials/svc-dml-client-secret
 
@@ -58,8 +61,8 @@ components:
       DNAVIO_KAFKA_BROKERS: kafka:9092
       DNAVIO_MONGO_DB: dnavio
     secretEnv:
-      DNAVIO_POSTGRES_DSN: datastores/postgres-dsn
-      DNAVIO_MONGO_URI: datastores/mongo-uri
+      DNAVIO_POSTGRES_DSN: partner/postgres-dsn
+      DNAVIO_MONGO_URI: partner/mongo-uri
       DNAVIO_KAFKA_CLIENT_ID: credentials/svc-frs-client-id
       DNAVIO_KAFKA_CLIENT_SECRET: credentials/svc-frs-client-secret
 
@@ -76,7 +79,7 @@ components:
       DNAVIO_FRS_API: http://t42-frs-api:8083
       DNAVIO_RULES_DIR: /rules
     secretEnv:
-      DNAVIO_POSTGRES_DSN: datastores/postgres-dsn
+      DNAVIO_POSTGRES_DSN: partner/postgres-dsn
       DNAVIO_KAFKA_CLIENT_ID: credentials/svc-frs-client-id
       DNAVIO_KAFKA_CLIENT_SECRET: credentials/svc-frs-client-secret
 
@@ -91,7 +94,7 @@ components:
       DNAVIO_HTTP_ADDR: ":8086"
       DNAVIO_KAFKA_BROKERS: kafka:9092
     secretEnv:
-      DNAVIO_POSTGRES_DSN: datastores/postgres-dsn
+      DNAVIO_POSTGRES_DSN: partner/postgres-dsn
       DNAVIO_KAFKA_CLIENT_ID: credentials/svc-frs-client-id
       DNAVIO_KAFKA_CLIENT_SECRET: credentials/svc-frs-client-secret
 
@@ -106,5 +109,5 @@ components:
       DNAVIO_HTTP_ADDR: ":8084"
       DNAVIO_MONGO_DB: dnavio
     secretEnv:
-      DNAVIO_POSTGRES_DSN: datastores/postgres-dsn
-      DNAVIO_MONGO_URI: datastores/mongo-uri
+      DNAVIO_POSTGRES_DSN: partner/postgres-dsn
+      DNAVIO_MONGO_URI: partner/mongo-uri

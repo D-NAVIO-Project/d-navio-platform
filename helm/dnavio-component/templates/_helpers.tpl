@@ -59,9 +59,11 @@ producing a broken or unsafe workload.
 {{- if not .Values.components -}}
 {{- fail "components: at least one component is required" -}}
 {{- end -}}
-{{- /* Image names reserved for platform infrastructure. Components use the
-       platform's broker, identity provider and datastores instead. */ -}}
-{{- $infra := list "kafka" "cp-kafka" "cp-server" "redpanda" "zookeeper" "keycloak" "postgres" "postgresql" "mongo" "mongodb" "minio" -}}
+{{- /* Platform services: components use the platform's instead of their own.
+       Datastores: partners run their own, but with their own chart — this
+       chart runs stateless services only (no volumes). */ -}}
+{{- $platformImages := list "kafka" "cp-kafka" "cp-server" "redpanda" "zookeeper" "keycloak" "minio" -}}
+{{- $datastoreImages := list "postgres" "postgresql" "mongo" "mongodb" "mysql" "mariadb" "redis" -}}
 {{- $credentialLike := "(?i)(password|passwd|secret|token|api_?key|private_?key)" -}}
 {{- $seen := dict -}}
 {{- range $c := .Values.components -}}
@@ -84,8 +86,12 @@ producing a broken or unsafe workload.
 {{- if or (regexMatch ":[^/]*$" $image) (contains "@" $image) -}}
 {{- fail (printf "components.%s: image %q must not carry a tag or digest — the tag comes from the build" $name $image) -}}
 {{- end -}}
-{{- if has (last (splitList "/" $image)) $infra -}}
-{{- fail (printf "components.%s: image %q is platform infrastructure — use the platform's broker, Keycloak and datastores instead of deploying your own" $name $image) -}}
+{{- $base := last (splitList "/" $image) -}}
+{{- if has $base $platformImages -}}
+{{- fail (printf "components.%s: image %q is a platform service — use the platform's broker, Keycloak and MinIO instead of deploying your own" $name $image) -}}
+{{- end -}}
+{{- if has $base $datastoreImages -}}
+{{- fail (printf "components.%s: image %q is a datastore — run it with your own chart (this chart has no volumes) and pass its connection string through Secret %s-secrets" $name $image $partner) -}}
 {{- end -}}
 {{- if not (regexMatch "^[0-9]+(Mi|Gi)$" (toString ($c.memory | default ""))) -}}
 {{- fail (printf "components.%s: memory is required, e.g. 64Mi (used as request and limit)" $name) -}}
@@ -114,7 +120,7 @@ producing a broken or unsafe workload.
 {{- range $k, $ref := $c.secretEnv -}}
 {{- $parts := splitList "/" (toString $ref) -}}
 {{- if ne (len $parts) 2 -}}
-{{- fail (printf "components.%s: secretEnv %s must be <alias>/<key>, e.g. datastores/postgres-dsn" $name $k) -}}
+{{- fail (printf "components.%s: secretEnv %s must be <alias>/<key>, e.g. credentials/svc-dml-client-secret" $name $k) -}}
 {{- end -}}
 {{- $alias := index $parts 0 -}}
 {{- $key := index $parts 1 -}}

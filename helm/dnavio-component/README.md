@@ -21,7 +21,8 @@ components:
     env:
       DNAVIO_KAFKA_BROKERS: kafka:9092
     secretEnv:
-      DNAVIO_POSTGRES_DSN: datastores/postgres-dsn
+      DNAVIO_KAFKA_CLIENT_SECRET: credentials/svc-dml-client-secret
+      DNAVIO_POSTGRES_DSN: partner/postgres-dsn
 ```
 
 | Field | Required | Meaning |
@@ -42,17 +43,18 @@ components:
 
 | Alias | Holds |
 |-------|-------|
-| `datastores` | `postgres-dsn`, `mongo-uri` (and the individual user/password/database keys) |
-| `credentials` | `<client>-client-id`, `<client>-client-secret` for the partner's Keycloak identities |
-| `partner` | The partner's own external credentials (e.g. a third-party API key), in Secret `<partner>-secrets`, created by NTUA on request |
+| `credentials` | `<client>-client-id`, `<client>-client-secret` for the partner's Keycloak identities (provided by the platform) |
+| `partner` | The partner's own credentials, in Secret `<partner>-secrets`: connection strings for the datastores it runs, and third-party keys. Created by the partner's own chart, or by NTUA on request |
 
 ## Rules enforced
 
 The chart refuses to render, with a message naming the component and field,
 when a values file:
 
-- deploys platform infrastructure (an image named `kafka`, `redpanda`,
-  `keycloak`, `postgres`, `mongo`, `minio`, …) — use the platform's instead
+- deploys a platform service (an image named `kafka`, `redpanda`, `keycloak`,
+  `minio`, …) — use the platform's instead
+- deploys a datastore (`postgres`, `mongo`, `redis`, …) — partners run their
+  own datastores, but with their own chart, since this one has no volumes
 - omits `memory`, or a health check
 - pins an image tag or digest — the build sets the tag to the git SHA
 - puts a credential-like variable (`*PASSWORD*`, `*SECRET*`, `*TOKEN*`,
@@ -111,9 +113,13 @@ jobs:
 ## Connecting to the platform
 
 Components run in the platform namespace, so platform services resolve by
-short name: `kafka:9092` (SASL_PLAINTEXT, OAUTHBEARER), `postgres:5432`,
-`mongo:27017`, and the token endpoint
+short name: `kafka:9092` (SASL_PLAINTEXT, OAUTHBEARER) and the token endpoint
 `http://keycloak:8080/realms/d-navio/protocol/openid-connect/token`.
+
+**Datastores are the partner's own.** Run them with your own chart (this chart
+deliberately does not run databases), name them `<partner>-<name>` (e.g.
+`t42-postgres`) so they cannot collide with other releases, and give your
+components their connection strings through Secret `<partner>-secrets`.
 Other components of the same partner are reachable at
 `http://<partner>-<component>:<port>`.
 
