@@ -61,6 +61,53 @@ when a values file:
 - references a Secret key that does not exist (checked against the live cluster)
 - reuses a component name, or uses an invalid name
 
+## Deploying from your repository
+
+Add one workflow to your repository. It builds each image on the platform VM
+and then deploys your release; every push to `main` redeploys.
+
+```yaml
+# .github/workflows/dnavio-deploy.yml
+name: Deploy to D-NAVIO
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      max-parallel: 1          # one shared build machine
+      matrix:
+        service: [ingest-api, stream-processor, frs-api,
+                  frs-derive, hydra-packager, query-api]
+    uses: D-NAVIO-Project/d-navio-platform/.github/workflows/build-component.yml@main
+    with:
+      partner: t42
+      image: ${{ matrix.service }}
+      dockerfile: deploy/compose/Dockerfile
+      build-args: SERVICE=${{ matrix.service }}
+
+  deploy:
+    needs: build
+    uses: D-NAVIO-Project/d-navio-platform/.github/workflows/deploy-component.yml@main
+    with:
+      partner: t42
+      values: deploy/dnavio-values.yaml
+      environment: dev
+```
+
+- Images are named `<partner>/<image>:<commit sha>`; the `image` entries in
+  your values file must match (`t42/ingest-api`).
+- If a component does not become ready, the deploy fails and the run log shows
+  that pod's events and recent logs — you do not need cluster access to debug.
+  **If your repository is public, so are those logs.**
+- `platform-ref` (default `main`) selects the chart version; keep it equal to
+  the `@ref` you call the workflows with.
+
 ## Connecting to the platform
 
 Components run in the platform namespace, so platform services resolve by

@@ -1,0 +1,119 @@
+name: Build component
+
+# Reusable workflow, called from a partner repository:
+#
+#   uses: D-NAVIO-Project/d-navio-platform/.github/workflows/build-component.yml@main
+#
+# Builds one image from the CALLER's repository on the platform VM and imports
+# it into the cluster's container runtime as <partner>/<image>:<git sha>
+# (step A in docs/design/partner-integration-model.md — no registry). When
+# images move to a registry (step B), only this file changes; callers keep the
+# same inputs.
+
+on:
+  workflow_call:
+    inputs:
+      partner:
+        description: Partner id (same as in the values file), e.g. t42
+        type: string
+        required: true
+      image:
+        description: Image name within the partner, e.g. ingest-api
+        type: string
+        required: true
+      dockerfile:
+        description: Path to the Dockerfile, relative to the repository root
+        type: string
+        default: Dockerfile
+      context:
+        description: Build context, relative to the repository root
+        type: string
+        default: "."
+      build-args:
+        description: Build arguments, one KEY=VALUE per line
+        type: string
+        default: ""
+    outputs:
+      image:
+        description: Imported image reference
+        value: ${{ jobs.build.outputs.image }}
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: Build ${{ inputs.partner }}/${{ inputs.image }}
+    runs-on: [self-hosted, dnavio-vm]
+    timeout-minutes: 30
+    outputs:
+      image: ${{ steps.build.outputs.image }}
+    # Inputs reach the scripts only through environment variables, never by
+    # direct ${{ }} interpolation, so a crafted input cannot inject shell.
+    env:
+      PARTNER: ${{ inputs.partner }}
+      IMAGE: ${{ inputs.image }}
+      DOCKERFILE: ${{ inputs.dockerfile }}
+      CONTEXT: ${{ inputs.context }}
+      BUILD_ARGS: ${{ inputs.build-args }}
+      TAG: ${{ github.sha }}
+    steps:
+      - name: Validate inputs
+        run: |
+          dns='^[a-z]([-a-z0-9]*[a-z0-9])?$'
+          [[ "$PARTNER" =~ $dns ]] || { echo "::error::partner '$PARTNER' must be lowercase letters, digits and hyphens"; exit 1; }
+          [[ "$IMAGE" =~ $dns ]] || { echo "::error::image '$IMAGE' must be lowercase letters, digits and hyphens"; exit 1; }
+          case "$PARTNER" in
+            library|dnavio|dnavio-platform|platform)
+              echo "::error::partner '$PARTNER' is reserved"; exit 1 ;;
+          esac
+          for p in "$DOCKERFILE" "$CONTEXT"; do
+            case "$p" in
+              /*|*..*) echo "::error::'$p' must be a path inside the repository"; exit 1 ;;
+            esac
+          done
+
+      - name: Check out partner repository
+        uses: actions/checkout@v4
+
+      - name: Build image
+        id: build
+        run: |
+          ref="${PARTNER}/${IMAGE}:${TAG}"
+          args=()
+          while IFS= read -r line; do
+            line="${line%$'\r'}"
+            [ -n "$line" ] && args+=(--build-arg "$line")
+          done <<< "$BUILD_ARGS"
+          docker build \
+            --file "$DOCKERFILE" \
+            --tag "$ref" \
+            --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.revision=${TAG}" \
+            "${args[@]}" \
+            "$CONTEXT"
+          echo "image=$ref" >> "$GITHUB_OUTPUT"
+
+      - name: Import into the cluster runtime
+        env:
+          REF: ${{ steps.build.outputs.image }}
+        run: |
+          docker save "$REF" | sudo ctr -n k8s.io images import -
+          # Kubernetes resolves "t42/ingest-api:<sha>" to docker.io/t42/...
+          # Capture first: `ctr ... | grep -q` under pipefail reports a found
+          # image as missing (grep exits early, ctr gets SIGPIPE).
+          images="$(sudo ctr -n k8s.io images ls -q)"
+          if grep -Fxq "docker.io/${REF}" <<< "$images"; then
+            echo "Imported docker.io/${REF}"
+          else
+            echo "::error::docker.io/${REF} not found in the cluster runtime after import"
+            exit 1
+          fi
+          # The cluster now holds the image; drop Docker's copy (the build
+          # cache is kept, so the next build stays fast).
+          docker image rm "$REF" > /dev/null
+          echo "Built and imported \`${REF}\`" >> "$GITHUB_STEP_SUMMARY"

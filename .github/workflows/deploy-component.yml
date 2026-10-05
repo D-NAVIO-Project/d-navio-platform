@@ -1,0 +1,189 @@
+name: Deploy component
+
+# Reusable workflow, called from a partner repository after its images are
+# built with build-component.yml:
+#
+#   uses: D-NAVIO-Project/d-navio-platform/.github/workflows/deploy-component.yml@main
+#
+# Installs or upgrades the partner's Helm release (named after the partner)
+# from helm/dnavio-component and the partner's values file, in the platform
+# namespace of the chosen environment. Partners have no cluster access, so on
+# failure this workflow prints the state, events and logs of the partner's
+# pods into the run log.
+
+on:
+  workflow_call:
+    inputs:
+      partner:
+        description: Partner id, e.g. t42. Also the Helm release name; overrides `partner` in the values file.
+        type: string
+        required: true
+      values:
+        description: Path to the partner's values file, relative to the repository root
+        type: string
+        required: true
+      environment:
+        description: Target environment (dev or pilot)
+        type: string
+        default: dev
+      platform-ref:
+        description: Ref of d-navio-platform to take the component chart from. Keep in step with the @ref used to call this workflow.
+        type: string
+        default: main
+      timeout:
+        description: How long to wait for all components to become ready
+        type: string
+        default: 5m
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.partner }} → ${{ inputs.environment }}
+    concurrency:
+      # One deploy per partner and environment at a time; never cancel one midway.
+      group: dnavio-component-${{ inputs.partner }}-${{ inputs.environment }}
+      cancel-in-progress: false
+    runs-on: [self-hosted, dnavio-vm]
+    timeout-minutes: 20
+    env:
+      PARTNER: ${{ inputs.partner }}
+      VALUES: ${{ inputs.values }}
+      ENVIRONMENT: ${{ inputs.environment }}
+      PLATFORM_REF: ${{ inputs.platform-ref }}
+      TIMEOUT: ${{ inputs.timeout }}
+      TAG: ${{ github.sha }}
+    steps:
+      - name: Validate inputs
+        run: |
+          [[ "$PARTNER" =~ ^[a-z]([-a-z0-9]*[a-z0-9])?$ ]] || { echo "::error::partner '$PARTNER' must be lowercase letters, digits and hyphens"; exit 1; }
+          case "$PARTNER" in
+            library|dnavio|dnavio-platform|platform)
+              echo "::error::partner '$PARTNER' is reserved"; exit 1 ;;
+          esac
+          case "$ENVIRONMENT" in
+            dev|pilot) ;;
+            *) echo "::error::environment must be dev or pilot, not '$ENVIRONMENT'"; exit 1 ;;
+          esac
+          case "$VALUES" in
+            /*|*..*) echo "::error::values '$VALUES' must be a path inside the repository"; exit 1 ;;
+          esac
+          [[ "$TIMEOUT" =~ ^[0-9]+[smh]$ ]] || { echo "::error::timeout '$TIMEOUT' must look like 5m"; exit 1; }
+          echo "NAMESPACE=dnavio-${ENVIRONMENT}" >> "$GITHUB_ENV"
+
+      - name: Check out partner repository
+        uses: actions/checkout@v4
+        with:
+          path: partner
+
+      - name: Check out component chart
+        uses: actions/checkout@v4
+        with:
+          repository: D-NAVIO-Project/d-navio-platform
+          ref: ${{ inputs.platform-ref }}
+          path: platform
+          sparse-checkout: helm/dnavio-component
+
+      - name: Set kubectl context
+        run: kubectl config use-context kubernetes-admin@kubernetes
+
+      - name: Pre-flight checks
+        run: |
+          [ -f "partner/${VALUES}" ] || { echo "::error::values file '${VALUES}' not found in the repository"; exit 1; }
+          if ! helm status dnavio-platform -n "$NAMESPACE" > /dev/null 2>&1; then
+            echo "::error::the platform is not deployed in ${NAMESPACE}"; exit 1
+          fi
+          # Render once: this runs every rule in the chart and yields the image
+          # list. A rule violation stops the deploy here, with its message.
+          helm template "$PARTNER" platform/helm/dnavio-component \
+            --namespace "$NAMESPACE" \
+            -f "partner/${VALUES}" \
+            --set partner="$PARTNER" \
+            --set image.tag="$TAG" > rendered.yaml
+          # Images are local to the VM (no registry yet): every image must have
+          # been imported by build-component.yml for this commit.
+          missing=0
+          # Capture first: `ctr ... | grep -q` under pipefail reports a found
+          # image as missing (grep exits early, ctr gets SIGPIPE).
+          runtime_images="$(sudo ctr -n k8s.io images ls -q)"
+          images="$(grep -E '^\s+image:' rendered.yaml | sed -E 's/^\s+image:\s*"?([^"]+)"?\s*$/\1/' | sort -u)"
+          while IFS= read -r img; do
+            [ -n "$img" ] || continue
+            case "$img" in
+              */*/*) continue ;;   # registry-qualified: pulled, not imported
+            esac
+            if grep -Fxq "docker.io/${img}" <<< "$runtime_images"; then
+              echo "found ${img}"
+            else
+              echo "::error::image ${img} has not been built — run build-component.yml for it first"
+              missing=1
+            fi
+          done <<< "$images"
+          exit "$missing"
+
+      - name: Unlock stuck release
+        run: |
+          status=$(helm status "$PARTNER" -n "$NAMESPACE" -o json 2>/dev/null \
+            | python3 -c "import sys, json; print(json.load(sys.stdin)['info']['status'])" 2>/dev/null \
+            || echo "not-found")
+          echo "Release status: ${status}"
+          case "$status" in
+            pending-install) helm uninstall "$PARTNER" -n "$NAMESPACE" ;;
+            pending-upgrade|pending-rollback) helm rollback "$PARTNER" -n "$NAMESPACE" ;;
+          esac
+
+      - name: Deploy
+        run: |
+          helm upgrade --install "$PARTNER" platform/helm/dnavio-component \
+            --namespace "$NAMESPACE" \
+            -f "partner/${VALUES}" \
+            --set partner="$PARTNER" \
+            --set image.tag="$TAG" \
+            --history-max 10 \
+            --wait \
+            --timeout "$TIMEOUT"
+
+      - name: Summary
+        if: success()
+        run: |
+          {
+            echo "### ${PARTNER} deployed to ${NAMESPACE}"
+            echo
+            echo "Revision \`${TAG:0:7}\`"
+            echo
+            echo '```'
+            kubectl get pods -n "$NAMESPACE" -l "app.kubernetes.io/instance=${PARTNER}" -o wide
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Diagnostics (on failure)
+        if: failure()
+        run: |
+          selector="app.kubernetes.io/instance=${PARTNER}"
+          echo "::group::Pods"
+          kubectl get pods -n "$NAMESPACE" -l "$selector" -o wide || true
+          echo "::endgroup::"
+          for pod in $(kubectl get pods -n "$NAMESPACE" -l "$selector" -o name 2>/dev/null); do
+            ready=$(kubectl get "$pod" -n "$NAMESPACE" \
+              -o jsonpath='{range .status.containerStatuses[*]}{.ready}{" "}{end}' 2>/dev/null || true)
+            case "$ready" in *false*|"") ;; *) continue ;; esac
+            echo "::group::${pod} — events"
+            kubectl describe "$pod" -n "$NAMESPACE" | sed -n '/^Events:/,$p' || true
+            echo "::endgroup::"
+            echo "::group::${pod} — logs (last 100 lines)"
+            kubectl logs "$pod" -n "$NAMESPACE" --all-containers --tail=100 || true
+            echo "::endgroup::"
+            restarts=$(kubectl get "$pod" -n "$NAMESPACE" \
+              -o jsonpath='{.status.containerStatuses[0].restartCount}' 2>/dev/null || true)
+            if [ "${restarts:-0}" -gt 0 ]; then
+              echo "::group::${pod} — logs before the last restart"
+              kubectl logs "$pod" -n "$NAMESPACE" --all-containers --previous --tail=100 || true
+              echo "::endgroup::"
+            fi
+          done
+          echo "::error::Deploy of ${PARTNER} to ${NAMESPACE} failed — expand the groups above for pod events and logs"
