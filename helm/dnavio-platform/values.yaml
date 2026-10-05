@@ -128,6 +128,8 @@ keycloak:
       secret: ""
     - clientId: svc-frs   # T4.2 frs-api, frs-derive, hydra-packager
       secret: ""
+    - clientId: svc-test-producer   # NTUA reference component (apps/test-producer)
+      secret: ""
   clients:
     # Confidential client used by D-NAVIO services and the Kafka scripts/Job to
     # obtain tokens (client credentials grant). The realm-bootstrap Job reconciles
@@ -198,9 +200,3 @@ mongo:
       cpu: "100m"
     limits:
       memory: "768Mi"
-
-testProducer:
-  enabled: false
-  image: test-producer:latest
-  imagePullPolicy: Never
-  topic: dnavio.dml.telemetry.raw

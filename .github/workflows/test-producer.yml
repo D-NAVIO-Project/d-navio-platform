@@ -1,0 +1,47 @@
+name: Test producer
+
+# Builds and deploys NTUA's reference component exactly as a partner would:
+# by calling the shared build/deploy workflows by their full path, as a
+# partner repository does. This keeps the partner path continuously exercised.
+#
+# While these workflows exist only on feat/test-producer, the calls are pinned
+# to it; after the merge, switch both `@feat/test-producer` refs and
+# `platform-ref` to main.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - apps/test-producer/**
+      - helm/dnavio-component/**
+      - .github/workflows/build-component.yml
+      - .github/workflows/deploy-component.yml
+      - .github/workflows/test-producer.yml
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options: [dev, pilot]
+        default: dev
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: D-NAVIO-Project/d-navio-platform/.github/workflows/build-component.yml@feat/test-producer
+    with:
+      partner: ntua
+      image: test-producer
+      dockerfile: apps/test-producer/Dockerfile
+      context: apps/test-producer
+
+  deploy:
+    needs: build
+    uses: D-NAVIO-Project/d-navio-platform/.github/workflows/deploy-component.yml@feat/test-producer
+    with:
+      partner: ntua
+      values: apps/test-producer/dnavio-values.yaml
+      environment: ${{ inputs.environment || 'dev' }}
+      platform-ref: feat/test-producer

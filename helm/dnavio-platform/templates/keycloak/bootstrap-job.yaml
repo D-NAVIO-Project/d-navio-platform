@@ -141,8 +141,15 @@ spec:
                 fi
               }
 
+              # The RBAC baseline identities, plus every client in
+              # keycloak.componentClients (so a new component identity is
+              # created in Keycloak, not only given a stored secret).
               CREDS_DIR=/etc/dnavio-component-credentials
-              for c in svc-dml svc-frs svc-dynamo svc-admin; do
+              CLIENTS="svc-dml svc-frs svc-dynamo svc-admin"
+              {{- range .Values.keycloak.componentClients }}
+              case " ${CLIENTS} " in *" {{ .clientId }} "*) ;; *) CLIENTS="${CLIENTS} {{ .clientId }}" ;; esac
+              {{- end }}
+              for c in ${CLIENTS}; do
                 if [ -f "${CREDS_DIR}/${c}-client-secret" ]; then
                   ensure_service_client "$c" "$(cat "${CREDS_DIR}/${c}-client-secret")"
                 else

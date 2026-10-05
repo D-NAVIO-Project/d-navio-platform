@@ -17,6 +17,3 @@ postgres:
 mongo:
   storage:
     size: 4Gi
-
-testProducer:
-  enabled: true
