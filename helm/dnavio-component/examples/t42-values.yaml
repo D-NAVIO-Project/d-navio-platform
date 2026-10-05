@@ -1,0 +1,110 @@
+# Example: T4.2 (DML / FRS) on the D-NAVIO platform.
+#
+# Ports and environment variables are T4.2's own (internal/config/config.go).
+# The Kafka client id/secret variables are the names proposed in
+# docs/operations/t42-integration.md; T4.2 reads them once it adds broker
+# authentication.
+#
+# Not included yet:
+#   pilot-replayer   needs the pilot datasets mounted as a volume, which the
+#                    component chart does not support yet.
+#   metis-connector  needs METIS credentials: these would come from
+#                    secretEnv `partner/<key>` (Secret t42-secrets, created by
+#                    NTUA on request).
+partner: t42
+
+components:
+  # DML ① controlled ingress
+  - name: ingest-api
+    image: t42/ingest-api
+    port: 8081
+    health: { readiness: /readyz, liveness: /healthz }
+    memory: 64Mi
+    env:
+      DNAVIO_COMPONENT: ingest-api
+      DNAVIO_HTTP_ADDR: ":8081"
+      DNAVIO_KAFKA_BROKERS: kafka:9092
+    secretEnv:
+      DNAVIO_POSTGRES_DSN: datastores/postgres-dsn
+      DNAVIO_KAFKA_CLIENT_ID: credentials/svc-dml-client-id
+      DNAVIO_KAFKA_CLIENT_SECRET: credentials/svc-dml-client-secret
+
+  # DML ②⑥ schema enforcement, normalisation, dual persistence
+  - name: stream-processor
+    image: t42/stream-processor
+    port: 8082
+    health: { readiness: /readyz, liveness: /healthz }
+    memory: 128Mi
+    env:
+      DNAVIO_COMPONENT: stream-processor
+      DNAVIO_HTTP_ADDR: ":8082"
+      DNAVIO_KAFKA_BROKERS: kafka:9092
+      DNAVIO_MONGO_DB: dnavio
+    secretEnv:
+      DNAVIO_POSTGRES_DSN: datastores/postgres-dsn
+      DNAVIO_MONGO_URI: datastores/mongo-uri
+      DNAVIO_KAFKA_CLIENT_ID: credentials/svc-dml-client-id
+      DNAVIO_KAFKA_CLIENT_SECRET: credentials/svc-dml-client-secret
+
+  # FRS ①–④ intake, classification, immutable store, HYDRA escalation
+  - name: frs-api
+    image: t42/frs-api
+    port: 8083
+    health: { readiness: /readyz, liveness: /healthz }
+    memory: 64Mi
+    env:
+      DNAVIO_COMPONENT: frs-api
+      DNAVIO_HTTP_ADDR: ":8083"
+      DNAVIO_KAFKA_BROKERS: kafka:9092
+      DNAVIO_MONGO_DB: dnavio
+    secretEnv:
+      DNAVIO_POSTGRES_DSN: datastores/postgres-dsn
+      DNAVIO_MONGO_URI: datastores/mongo-uri
+      DNAVIO_KAFKA_CLIENT_ID: credentials/svc-frs-client-id
+      DNAVIO_KAFKA_CLIENT_SECRET: credentials/svc-frs-client-secret
+
+  # FRS rule packs; submits derived records through frs-api
+  - name: frs-derive
+    image: t42/frs-derive
+    port: 8085
+    health: { readiness: /readyz, liveness: /healthz }
+    memory: 64Mi
+    env:
+      DNAVIO_COMPONENT: frs-derive
+      DNAVIO_HTTP_ADDR: ":8085"
+      DNAVIO_KAFKA_BROKERS: kafka:9092
+      DNAVIO_FRS_API: http://t42-frs-api:8083
+      DNAVIO_RULES_DIR: /rules
+    secretEnv:
+      DNAVIO_POSTGRES_DSN: datastores/postgres-dsn
+      DNAVIO_KAFKA_CLIENT_ID: credentials/svc-frs-client-id
+      DNAVIO_KAFKA_CLIENT_SECRET: credentials/svc-frs-client-secret
+
+  # FRS ⑥ HYDRA root-node probability packages
+  - name: hydra-packager
+    image: t42/hydra-packager
+    port: 8086
+    health: { readiness: /readyz, liveness: /healthz }
+    memory: 64Mi
+    env:
+      DNAVIO_COMPONENT: hydra-packager
+      DNAVIO_HTTP_ADDR: ":8086"
+      DNAVIO_KAFKA_BROKERS: kafka:9092
+    secretEnv:
+      DNAVIO_POSTGRES_DSN: datastores/postgres-dsn
+      DNAVIO_KAFKA_CLIENT_ID: credentials/svc-frs-client-id
+      DNAVIO_KAFKA_CLIENT_SECRET: credentials/svc-frs-client-secret
+
+  # DML ⑤ / FRS ⑤ read models, replay windows, export — no broker access
+  - name: query-api
+    image: t42/query-api
+    port: 8084
+    health: { readiness: /readyz, liveness: /healthz }
+    memory: 128Mi
+    env:
+      DNAVIO_COMPONENT: query-api
+      DNAVIO_HTTP_ADDR: ":8084"
+      DNAVIO_MONGO_DB: dnavio
+    secretEnv:
+      DNAVIO_POSTGRES_DSN: datastores/postgres-dsn
+      DNAVIO_MONGO_URI: datastores/mongo-uri

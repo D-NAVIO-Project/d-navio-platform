@@ -38,6 +38,11 @@ jobs:
         run: helm lint ./helm/dnavio-platform -f helm/dnavio-platform/values-dev.yaml
       - name: Lint chart (pilot values)
         run: helm lint ./helm/dnavio-platform -f helm/dnavio-platform/values-pilot.yaml
+      - name: Lint component chart (T4.2 example)
+        run: |
+          helm lint ./helm/dnavio-component \
+            -f helm/dnavio-component/examples/t42-values.yaml \
+            --set image.tag=ci
 
   kubeconform:
     name: Kubernetes schema
@@ -65,6 +70,12 @@ jobs:
             -f helm/dnavio-platform/values-pilot.yaml \
             --set keycloak.adminPassword=placeholder \
             --set minio.rootPassword=placeholder \
+            | kubeconform -strict -summary -kubernetes-version 1.30.0 -
+      - name: Validate rendered component chart (T4.2 example)
+        run: |
+          helm template t42 ./helm/dnavio-component \
+            -f helm/dnavio-component/examples/t42-values.yaml \
+            --set image.tag=ci \
             | kubeconform -strict -summary -kubernetes-version 1.30.0 -
       - name: Validate infra manifests (allow unknown CRDs)
         run: |

@@ -1,0 +1,49 @@
+# Values for one partner's components. Partners provide `partner` and
+# `components` in their own values file; the deploy workflow sets `image.tag`.
+# See README.md and examples/.
+
+# Short partner id (lowercase letters, digits, hyphens). Every resource is
+# named <partner>-<component>.
+partner: ""
+
+image:
+  # Set by the deploy workflow to the git SHA of the build. Required.
+  tag: ""
+  # Empty while images are built on the platform VM (step A). Set to the
+  # registry prefix once images are published to a registry (step B),
+  # e.g. ghcr.io/d-navio-project.
+  registry: ""
+  pullPolicy: IfNotPresent
+
+# PriorityClass for partner pods. Left empty until the platform defines the
+# partner PriorityClass; the platform then sets it for every partner release.
+priorityClassName: ""
+
+# Secrets a component may read from, via `secretEnv: {VAR: <alias>/<key>}`.
+# Partners use the aliases only, never the Secret names.
+platform:
+  secrets:
+    datastores: dnavio-datastores                 # postgres-dsn, mongo-uri, ...
+    credentials: dnavio-component-credentials     # <client>-client-id / -client-secret
+    # partner: resolved to "<partner>-secrets" — the partner's own external
+    # credentials (e.g. a third-party API key), created by NTUA on request.
+
+# One entry per service. Example:
+#
+# components:
+#   - name: ingest-api            # required
+#     image: t42/ingest-api       # required, without tag
+#     memory: 64Mi                # required, request = limit
+#     port: 8081                  # optional; creates a Service <partner>-<name>
+#     health: /healthz            # required with a port: one path, or
+#                                 #   {readiness: /readyz, liveness: /healthz}
+#     healthCommand: [...]        # required instead of `health` without a port
+#     cpu: 100m                   # optional CPU request
+#     replicas: 1                 # optional
+#     command: [...]              # optional
+#     args: [...]                 # optional
+#     env:                        # literal, non-secret settings
+#       DNAVIO_COMPONENT: ingest-api
+#     secretEnv:                  # <alias>/<key>, see platform.secrets
+#       DNAVIO_POSTGRES_DSN: datastores/postgres-dsn
+components: []
