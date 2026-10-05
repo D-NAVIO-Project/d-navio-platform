@@ -110,7 +110,19 @@ jobs:
           missing=0
           # Capture first: `ctr ... | grep -q` under pipefail reports a found
           # image as missing (grep exits early, ctr gets SIGPIPE).
-          runtime_images="$(sudo ctr -n k8s.io images ls -q)"
+          # The runner user needs passwordless sudo for ctr (one sudoers rule on
+          # the VM). -n fails immediately instead of prompting for a password.
+          if ! sudo -n ctr --version > /dev/null 2>&1; then
+            user="$(id -un)"
+            ctr_path="$(readlink -f "$(command -v ctr 2>/dev/null)" 2>/dev/null || true)"
+            ctr_path="${ctr_path:-/usr/bin/ctr}"
+            echo "::error::The runner user (${user}) cannot run 'ctr' with passwordless sudo."
+            echo "Fix, once, on the VM:"
+            echo "  echo \"${user} ALL=(root) NOPASSWD: ${ctr_path}\" | sudo tee /etc/sudoers.d/${user}-ctr"
+            echo "  sudo chmod 440 /etc/sudoers.d/${user}-ctr && sudo visudo -cf /etc/sudoers.d/${user}-ctr"
+            exit 1
+          fi
+          runtime_images="$(sudo -n ctr -n k8s.io images ls -q)"
           images="$(grep -E '^\s+image:' rendered.yaml | sed -E 's/^\s+image:\s*"?([^"]+)"?\s*$/\1/' | sort -u)"
           while IFS= read -r img; do
             [ -n "$img" ] || continue
