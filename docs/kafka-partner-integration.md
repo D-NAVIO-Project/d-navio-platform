@@ -1,12 +1,17 @@
 # D-NAVIO Kafka Integration Guide for Partners
 
-This guide explains how to connect your application to the D-NAVIO message broker, what you need to request from the NTUA team, and how to deploy your component in Kubernetes with the correct configuration.
+This guide explains how to connect your application to the D-NAVIO message broker **from outside the platform cluster** — the external path. Start with the [Partner Onboarding Guide](partners-onboarding.md): it covers how to request access, and the in-cluster path for components that run on the D-NAVIO platform itself.
+
+> **Endpoints.** This guide writes the platform endpoints as placeholders:
+> `<broker>` — the broker address (`host:port`), and `<keycloak>` — the
+> Keycloak base URL (`https://host:port`). The NTUA team sends you the real
+> values together with your credentials, through a private channel.
 
 ---
 
 ## 1. What to Request from the NTUA Team
 
-Before writing any code, contact the NTUA team and request the following:
+Request access with the onboarding form (see the [Partner Onboarding Guide](partners-onboarding.md#step-1--request-access-both-paths)). Once your request is approved, the NTUA team provides the following through a private channel:
 
 | Item | Description |
 |------|-------------|
@@ -25,19 +30,19 @@ Before configuring your application, verify that your environment can reach the 
 
 | Endpoint | Host | Port | Protocol | Purpose |
 |----------|------|------|----------|---------|
-| Kafka broker | `147.102.6.143` | `30094` | TCP (TLS) | Message produce / consume |
-| Token endpoint | `147.102.6.143` | `30443` | HTTPS | Obtain OAUTHBEARER token |
+| Kafka broker | `<broker>` host | `<broker>` port | TCP (TLS) | Message produce / consume |
+| Token endpoint | `<keycloak>` host | `<keycloak>` port | HTTPS | Obtain OAUTHBEARER token |
 
 **Firewall check** — run these from your environment before writing any code:
 
 ```bash
 # Check Kafka broker reachability
-nc -zv 147.102.6.143 30094
+nc -zv <broker-host> <broker-port>
 
 # Check Keycloak reachability (--cacert: the ca.crt provided by the NTUA team;
 # use -k instead for a quick connectivity-only test)
 curl -s -o /dev/null -w "%{http_code}" --cacert ca.crt \
-  https://147.102.6.143:30443/realms/d-navio/.well-known/openid-configuration
+  <keycloak>/realms/d-navio/.well-known/openid-configuration
 # Expected: 200
 ```
 
@@ -49,10 +54,10 @@ If either check fails, contact the NTUA team — a firewall rule may need to be 
 
 | Parameter | Value |
 |-----------|-------|
-| **Kafka bootstrap server** | `147.102.6.143:30094` |
+| **Kafka bootstrap server** | `<broker>` |
 | **Security protocol** | `SASL_SSL` (TLS) |
 | **SASL mechanism** | `OAUTHBEARER` |
-| **Token endpoint** | `https://147.102.6.143:30443/realms/d-navio/protocol/openid-connect/token` |
+| **Token endpoint** | `<keycloak>/realms/d-navio/protocol/openid-connect/token` |
 | **CA certificate** | `ca.crt` provided during onboarding — required to verify both endpoints |
 
 ### How authentication works
@@ -79,7 +84,7 @@ Before connecting to Kafka, confirm you can obtain a token:
 
 ```bash
 curl -s -X POST --cacert ca.crt \
-  https://147.102.6.143:30443/realms/d-navio/protocol/openid-connect/token \
+  <keycloak>/realms/d-navio/protocol/openid-connect/token \
   -d "grant_type=client_credentials" \
   -d "client_id=your-client-id" \
   -d "client_secret=your-client-secret" | python3 -m json.tool
@@ -137,9 +142,15 @@ Confirm the exact schema with the NTUA team before going live — schemas may ev
 
 ---
 
-## 5. Deploying in Kubernetes
+## 5. Deploying in Your Own Kubernetes Cluster
 
-If your application runs in Kubernetes, store credentials as a Secret and inject them as environment variables.
+> This section is for components running in **your own** cluster. If your
+> components run on the D-NAVIO platform cluster, follow
+> [Path A of the Partner Onboarding Guide](partners-onboarding.md#path-a--in-cluster)
+> instead: there you never create credential Secrets yourself, and you connect
+> to `kafka:9092` inside the cluster.
+
+If your application runs in your own Kubernetes cluster, store credentials as a Secret and inject them as environment variables.
 
 ### Step 1 — Create the Secret
 
@@ -182,9 +193,9 @@ spec:
           image: your-image:tag
           env:
             - name: KAFKA_BOOTSTRAP
-              value: "147.102.6.143:30094"
+              value: "<broker>"
             - name: KAFKA_TOKEN_URL
-              value: "https://147.102.6.143:30443/realms/d-navio/protocol/openid-connect/token"
+              value: "<keycloak>/realms/d-navio/protocol/openid-connect/token"
             - name: KAFKA_CA_CERT
               value: "/etc/dnavio-ca/ca.crt"
             - name: KAFKA_CLIENT_ID
@@ -237,8 +248,8 @@ pip install confluent-kafka requests
 import os, time, requests
 from confluent_kafka import Producer, Consumer
 
-BOOTSTRAP     = os.getenv("KAFKA_BOOTSTRAP",    "147.102.6.143:30094")
-TOKEN_URL     = os.getenv("KAFKA_TOKEN_URL",    "https://147.102.6.143:30443/realms/d-navio/protocol/openid-connect/token")
+BOOTSTRAP     = os.environ["KAFKA_BOOTSTRAP"]   # <broker>
+TOKEN_URL     = os.environ["KAFKA_TOKEN_URL"]   # <keycloak>/realms/d-navio/protocol/openid-connect/token
 CLIENT_ID     = os.getenv("KAFKA_CLIENT_ID",    "your-client-id")
 CLIENT_SECRET = os.getenv("KAFKA_CLIENT_SECRET","your-client-secret")
 CA_CERT       = os.getenv("KAFKA_CA_CERT",      "ca.crt")  # provided by the NTUA team
@@ -271,11 +282,21 @@ kafka_conf = {
 
 # --- Produce ---
 def produce(topic: str, payload: bytes):
+    # flush() alone is not enough: a rejected message (e.g. no permission on
+    # the topic) still leaves the queue, so the error is only visible in the
+    # delivery callback.
+    result = {}
+
+    def on_delivery(err, _msg):
+        result["error"] = err
+
     p = Producer(kafka_conf)
-    p.produce(topic, value=payload)
+    p.produce(topic, value=payload, on_delivery=on_delivery)
     remaining = p.flush(timeout=10)
     if remaining:
         raise RuntimeError("Message not delivered within timeout")
+    if result.get("error") is not None:
+        raise RuntimeError(f"Delivery failed: {result['error']}")
 
 
 # --- Consume ---
@@ -318,7 +339,7 @@ def consume(topic: str, group_id: str):
 # application.yml
 spring:
   kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP:147.102.6.143:30094}
+    bootstrap-servers: ${KAFKA_BOOTSTRAP}
     properties:
       security.protocol: SASL_SSL
       # PEM truststore: point at the ca.crt provided by the NTUA team
@@ -348,7 +369,7 @@ spring:
 
 | Error | Likely Cause | Action |
 |-------|-------------|--------|
-| `Connection refused` to port 30094 | Network/firewall | Check port reachability with `nc -zv` |
+| `Connection refused` to the broker port | Network/firewall | Check port reachability with `nc -zv` |
 | `SSL handshake failed` / `certificate verify failed` | CA certificate missing or not trusted | Point your client at the `ca.crt` provided by the NTUA team (`ssl.ca.location` / truststore / `verify=`) |
 | `401 Unauthorized` from token endpoint | Wrong `client_id` or `client_secret` | Verify credentials with the NTUA team |
 | `Authentication failed` from Kafka | Token expired or wrong issuer | Check the token endpoint URL — must match exactly |
@@ -383,7 +404,7 @@ kafka_conf = {
 - **TLS on all external endpoints** — the broker's external listener uses `SASL_SSL` and the token endpoint is HTTPS. The platform currently uses a D-NAVIO-issued CA, so your client must trust the `ca.crt` provided during onboarding. Do not disable certificate verification in production code.
 - **Token TTL is 5 minutes** — the client libraries handle refresh automatically. Do not cache tokens manually.
 - **One client per application** — do not share `client_id` / `client_secret` across teams or services.
-- **Topic access is scoped** — your client is only granted access to agreed topics. Unauthorized topic access returns an authentication error, not a permissions error.
+- **Use only the topics agreed in your onboarding request.** Access rules are being introduced topic by topic; where one applies, a write without permission fails with `TOPIC_AUTHORIZATION_FAILED`. In `confluent-kafka` this error only appears in the delivery callback, not from `flush()` — check it (see section 6).
 
 ---
 
@@ -391,8 +412,8 @@ kafka_conf = {
 
 - [ ] Client ID, Client Secret, and CA certificate (`ca.crt`) received from the NTUA team
 - [ ] Topics confirmed with the NTUA team
-- [ ] Port `30094` (Kafka, TLS) reachable from your environment
-- [ ] Port `30443` (Keycloak, HTTPS) reachable from your environment
+- [ ] Broker port (`<broker>`, TLS) reachable from your environment
+- [ ] Keycloak port (`<keycloak>`, HTTPS) reachable from your environment
 - [ ] Token obtained successfully via `curl` (using `--cacert ca.crt`)
 - [ ] Test message produced and consumed end-to-end
 - [ ] Kubernetes Secret created and injected into your Deployment
