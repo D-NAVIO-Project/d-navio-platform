@@ -10,7 +10,9 @@ name: Test producer
 
 on:
   push:
-    branches: [main]
+    # feat/test-producer: GitHub shows "Run workflow" only for workflows that
+    # exist on the default branch, so until the merge a push is the trigger.
+    branches: [main, feat/test-producer]
     paths:
       - apps/test-producer/**
       - helm/dnavio-component/**
