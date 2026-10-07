@@ -113,8 +113,13 @@ producing a broken or unsafe workload.
 {{- fail (printf "components.%s: without a port, healthCommand is required (a command that exits 0 when healthy)" $name) -}}
 {{- end -}}
 {{- range $k, $v := $c.env -}}
-{{- if regexMatch $credentialLike $k -}}
+{{- /* Names like KAFKA_TOKEN_URL are locations, not secrets; any value that
+       embeds a password in a URL is refused regardless of its name. */ -}}
+{{- if and (regexMatch $credentialLike $k) (not (regexMatch "(?i)_(URL|URI|ENDPOINT|PATH|FILE)$" $k)) -}}
 {{- fail (printf "components.%s: env %s looks like a credential — use secretEnv so the value comes from a Secret" $name $k) -}}
+{{- end -}}
+{{- if regexMatch "://[^/@\\s]+:[^/@\\s]+@" (toString $v) -}}
+{{- fail (printf "components.%s: env %s contains a password inside a URL — use secretEnv so the value comes from a Secret" $name $k) -}}
 {{- end -}}
 {{- end -}}
 {{- range $k, $ref := $c.secretEnv -}}

@@ -10,8 +10,9 @@ see [Required changes in d-navio-t4.2](#required-changes-in-d-navio-t42).
 |---|---|---|
 | Message broker (Kafka), topics, ACLs | **Platform** | T4.2 drops its bundled Redpanda |
 | Identity provider (Keycloak), `svc-dml` / `svc-frs` | **Platform** | Credentials injected into T4.2 pods |
-| PostgreSQL and MongoDB | **T4.2** | With T4.2's schema, in T4.2's own chart |
+| PostgreSQL and MongoDB | **T4.2** | The platform's datastores, with T4.2's schema, in T4.2's own chart (release `t42-infra`) |
 | T4.2 services | **T4.2** | Via `helm/dnavio-component` and the shared build/deploy workflows |
+| Data for other partners | **T4.2** | Live via Kafka topics; history via T4.2's query service (to be agreed) |
 
 Everything runs in the platform namespace (`dnavio-dev`, `dnavio-pilot`), so
 the endpoints below are in-cluster Service names.
@@ -52,10 +53,15 @@ appear as `User:svc-dml` / `User:svc-frs`. Topic ACLs are currently enforced
 only on `dnavio.ops.admin-audit`; every other topic accepts any authenticated
 client.
 
-## What T4.2 runs: its datastores
+## What T4.2 runs: the platform's datastores
 
-T4.2 deploys its own PostgreSQL and MongoDB with its own chart (the component
-chart runs stateless services only). Requirements, because they share the
+T4.2 runs the platform's PostgreSQL and MongoDB. Other partners do not connect
+to them: they receive data through Kafka topics, and history through T4.2's
+query service. T4.2 deploys them with its own chart, passed to the shared
+deploy workflow as `chart:` — it is installed as release `t42-infra`, before
+the T4.2 services, after the automated platform check. The reference chart
+`helm/dnavio-component/examples/infra-chart` covers PostgreSQL (a MongoDB
+StatefulSet follows the same pattern). Requirements, because they share the
 platform namespace and VM:
 
 - **Names prefixed `t42-`** — e.g. Services `t42-postgres`, `t42-mongo`, and
@@ -104,9 +110,10 @@ These are **not** made by the platform; they belong to the T4.2 owners.
 2. **Drop Redpanda** from the T4.2 chart and point all services at
    `kafka:9092`.
 
-3. **Datastores** as described above: `t42-` names, credentials in
-   `t42-secrets` instead of the hardcoded `postgres://dnavio:dnavio@...`,
-   limits and probes.
+3. **Datastores** as described above: an own chart (e.g. `deploy/infra`)
+   with `t42-` names, credentials in `t42-secrets` instead of the hardcoded
+   `postgres://dnavio:dnavio@...`, limits and probes; passed to the deploy
+   workflow as `chart: deploy/infra`.
 
 4. **Services via the component chart.** Add `deploy/dnavio-values.yaml` —
    `helm/dnavio-component/examples/t42-values.yaml` is a ready-made draft for
@@ -115,6 +122,10 @@ These are **not** made by the platform; they belong to the T4.2 owners.
    `helm/dnavio-component/README.md`). This replaces the current `deploy.yml`,
    which points at `./helm/frs-platform` (does not exist) and has no image
    build.
+
+6. **History for other partners.** Agree whether `query-api` (replay windows,
+   exports) is the interface for data older than topic retention, and if so,
+   document its endpoints for other partners.
 
 5. **Pace the replay in shared environments.** A full replay publishes
    ~7.5M records in ~5 minutes while persistence drains at ~7,400/s. The

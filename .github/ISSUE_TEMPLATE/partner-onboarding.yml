@@ -90,11 +90,11 @@ body:
   - type: textarea
     id: datastores
     attributes:
-      label: Datastores you will run
+      label: Datastores you will run (if any)
       description: |
-        Partners run their own databases (e.g. PostgreSQL, MongoDB) in their own chart, named <partner>-<name>.
-        List them with their expected memory and storage, for the capacity budget. Note if you need the
-        platform's MinIO (object storage).
+        Most partners need none: platform data is available through Kafka topics. If you will run your own
+        database (in your own chart, named <partner>-<name>), list it with its expected memory and storage,
+        for the capacity budget. Note here if you need the platform's MinIO (object storage).
       placeholder: |
         t42-postgres — 512Mi memory, 8Gi storage
         t42-mongo — 512Mi memory, 4Gi storage

@@ -1,0 +1,5 @@
+apiVersion: v2
+name: partner-infra
+description: Reference chart for a partner's own datastore (PostgreSQL) on the D-NAVIO platform
+type: application
+version: 0.1.0

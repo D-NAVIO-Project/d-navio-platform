@@ -99,7 +99,9 @@ jobs:
     with:
       partner: t42
       values: deploy/dnavio-values.yaml
+      # chart: deploy/infra      # optional: your own chart, see below
       environment: dev
+      logs: true                 # optional: print startup logs after deploying
 ```
 
 - Images are named `<partner>/<image>:<commit sha>`; the `image` entries in
@@ -116,15 +118,26 @@ Components run in the platform namespace, so platform services resolve by
 short name: `kafka:9092` (SASL_PLAINTEXT, OAUTHBEARER) and the token endpoint
 `http://keycloak:8080/realms/d-navio/protocol/openid-connect/token`.
 
-**Datastores are the partner's own.** Run them with your own chart (this chart
-deliberately does not run databases), name them `<partner>-<name>` (e.g.
-`t42-postgres`) so they cannot collide with other releases, and give your
-components their connection strings through Secret `<partner>-secrets`.
+**Platform data comes through Kafka topics**; the platform's databases are run
+by T4.2 (Data Management Layer) and are not accessed directly.
+
+## Your own chart
+
+For what this chart cannot run — a database, a StatefulSet, a CronJob — pass
+your own chart to the deploy workflow (`chart: deploy/infra`). It is installed
+as release `<partner>-infra`, before your components, after an automated check
+(`scripts/partner-policy/check_partner_chart.py`): every resource named
+`<partner>-...`, allowed kinds only (workloads, Services, ConfigMaps, Secrets,
+PVCs), `ClusterIP` Services only, memory limits on every container, no host
+access or privileged containers, no platform service images, no literal
+credentials. Start from [examples/infra-chart](examples/infra-chart): a
+PostgreSQL whose connection string lands in `<partner>-secrets` for your
+components to read as `partner/postgres-dsn`.
 Other components of the same partner are reachable at
 `http://<partner>-<component>:<port>`.
 
 ## Not supported yet
 
-- **Volumes** (e.g. mounting datasets). Ship the data in the image, or use your
-  own chart under the same rules.
-- StatefulSets, CronJobs, Ingress.
+- **Volumes** (e.g. mounting datasets), StatefulSets, CronJobs — use your own
+  chart (above).
+- Ingress (exposing a service outside the cluster) — ask the NTUA team.

@@ -1,0 +1,11 @@
+# Reference "own chart" for a partner datastore. Copy this directory into your
+# repository (e.g. deploy/infra), adjust, and pass it to deploy-component.yml
+# as `chart: deploy/infra`. It is deployed as release <partner>-infra; every
+# resource is named <partner>-..., derived from the release name.
+
+postgres:
+  image: postgres:16-alpine
+  username: app
+  database: app
+  memory: 512Mi
+  storage: 8Gi

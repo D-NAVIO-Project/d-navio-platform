@@ -52,9 +52,14 @@ The platform is a **shared service provider**; partners bring **components**.
 
 - **NTUA** runs the broker and Keycloak, and onboards partners on request.
 - **Partners** write their components and describe how to run them in a short
-  values file. Partners that need datastores run their own (see
-  [Datastores](#datastores-run-by-each-partner)). They build and deploy from their own repository using workflows
+  values file. They build and deploy from their own repository using workflows
   provided by this repository.
+- **T4.2 (Data Management Layer)** runs the platform's datastores; other
+  partners get data through Kafka topics (see
+  [Datastores and data access](#datastores-and-data-access)).
+- Workflows provided by this repository deploy each partner as its own Helm
+  release; anything the component chart cannot express comes from the
+  partner's own chart, checked automatically before install.
 - Everything runs in the **platform namespace** (`dnavio-dev`, `dnavio-pilot`),
   each partner as its **own Helm release**.
 
@@ -70,7 +75,7 @@ The platform is a **shared service provider**; partners bring **components**.
  ┌─ namespace dnavio-dev ─────────────▼────────────────────────────┐
  │  release dnavio-platform: kafka, keycloak, minio, credentials   │
  │  release t42:     t42-ingest-api, t42-stream-processor, ...     │
- │  release t42-db:  t42-postgres, t42-mongo, t42-secrets (own)    │
+ │  release t42-infra: t42-postgres, t42-mongo, t42-secrets (own)  │
  │  release <next>:  <next>-...                                    │
  └─────────────────────────────────────────────────────────────────┘
 ```
@@ -80,7 +85,7 @@ The platform is a **shared service provider**; partners bring **components**.
 | | NTUA platform team | Partner |
 |---|---|---|
 | Broker, Keycloak, TLS | owns and operates | uses |
-| Datastores (Postgres, Mongo, ...) | — | **runs its own**, in its own chart |
+| Platform datastores (Postgres, Mongo) | — | **T4.2 runs them**, in its own chart; others use data via Kafka |
 | Identities, topics, ACLs | applies on request | **requests** (issue form) |
 | Credentials Secrets | creates and keeps stable | references by key |
 | Component chart, build/deploy workflows | provides and maintains | uses |
@@ -185,22 +190,39 @@ deploys on its own schedule without touching the platform release. If two
 releases try to own the same resource, Helm refuses — a collision fails
 loudly instead of overwriting.
 
-**Escape hatch**: a partner that needs something the component chart cannot
-express (a StatefulSet, a CronJob) may ship its own chart, reviewed against the
-same rules.
+### The partner's own chart
 
-### Datastores: run by each partner
+What the component chart cannot express (a database, a StatefulSet, a CronJob)
+comes from the partner's own chart, passed to the deploy workflow as `chart:`.
+It is installed as release `<partner>-infra`, before the components, after an
+automated check of the rendered manifests
+(`scripts/partner-policy/check_partner_chart.py`):
 
-Partners that need a database run it themselves, as a second release from
-their own chart (the component chart runs stateless services only). In the
-shared namespace that chart must:
+| Rule | Why |
+|------|-----|
+| Every resource named `<partner>-...`, no other namespace | No collisions in the shared namespace |
+| Only Deployment, StatefulSet, Job, CronJob, Service, ConfigMap, Secret, PVC | Permissions and cluster-wide resources stay with NTUA |
+| Services `ClusterIP` only | Nothing exposed outside the cluster |
+| Memory limit on every container | The VM is shared |
+| No host network/PID/IPC, hostPath or privileged containers | No access to the VM itself |
+| No platform service images (Kafka, Keycloak, MinIO) | One broker, one identity provider |
+| No literal credentials in environment variables | Credentials only from Secrets |
 
-- prefix every resource with the partner id (`t42-postgres`, `t42-mongo`);
-- keep credentials in Secret `<partner>-secrets`, which the partner's services
-  read through the `partner` alias (`partner/postgres-dsn`);
-- set memory limits and probes, and size storage within the agreed budget.
+A reference chart (`helm/dnavio-component/examples/infra-chart`) runs
+PostgreSQL with a stable generated password and puts the connection string in
+`<partner>-secrets`.
 
-The platform provides only MinIO (object storage) as a shared store.
+### Datastores and data access
+
+- **T4.2 (DML) runs the platform's PostgreSQL and MongoDB** with its own chart,
+  as `t42-postgres` / `t42-mongo`, credentials in `t42-secrets`.
+- **Other partners do not connect to the databases.** They receive live data
+  through Kafka topics (e.g. `dnavio.dml.telemetry.normalized`,
+  `dnavio.frs.failures.reported`), under the topic contracts.
+- **History beyond topic retention** (telemetry topics keep 7 days) comes from
+  T4.2, which already implements replay windows and exports in its query
+  service — to be agreed with T4.2 as the platform's history interface.
+- The platform itself offers MinIO (object storage) on request.
 
 ## 3. Onboarding by request
 
@@ -211,7 +233,7 @@ this repository ("Partner onboarding request") asking for:
 - hosting: in-cluster or external (e.g. MAG)
 - identities needed, and what each is used for
 - topics produced (with expected volume) and topics consumed
-- datastores the partner will run (for the capacity budget)
+- datastores the partner will run, if any (for the capacity budget)
 - memory budget for all components
 - link to the AsyncAPI contract for produced topics
 
@@ -262,10 +284,9 @@ trusted, or needs a hard memory cap.
 | Platform, dev + pilot | 1.8 GiB | 3.3 GiB |
 | VM total | 11 GiB | |
 
-Partners' datastores come out of their own budget. For reference, T4.2
-reports **~140 MB for all its Go services combined**; its databases are the
-heavier part (a full replay measured Postgres ~3.3 GB and Mongo ~0.8 GB of
-data). The other risk is JVM-based, ML and simulation components (e.g. DSS,
+T4.2's datastores come out of T4.2's budget. For reference, T4.2 reports
+**~140 MB for all its Go services combined**; its databases are the heavier
+part (a full replay measured Postgres ~3.3 GB and Mongo ~0.8 GB of data). The other risk is JVM-based, ML and simulation components (e.g. DSS,
 XAI, DYNAMO/OSP). Plan:
 
 1. **Measure** actual usage (`kubectl top pods -A`; requires metrics-server)
@@ -294,7 +315,7 @@ is exposed beyond the consortium. The hardening path is in phase 3.
 
 | Phase | Platform (NTUA) | Partner |
 |-------|-----------------|---------|
-| **1 — first partner** | onboarding issue form; `partners` values driving identities, topics and ACLs; `helm/dnavio-component`; reusable build (step A) and deploy workflows; PriorityClasses + LimitRange; Kafka FQDN | T4.2: OAUTHBEARER in its Kafka client, drop Redpanda, own datastores with `t42-` names and `t42-secrets`, add `deploy/dnavio-values.yaml` |
+| **1 — first partner** | onboarding issue form; `partners` values driving identities, topics and ACLs; `helm/dnavio-component`; reusable build (step A) and deploy workflows; PriorityClasses + LimitRange; Kafka FQDN | T4.2: OAUTHBEARER in its Kafka client, drop Redpanda, datastores as its own chart (`t42-infra`), add `deploy/dnavio-values.yaml` |
 | **2 — more partners** | GHCR builds (step B); deny-by-default ACLs (incl. consumer-group READ); metrics-server and capacity review | AsyncAPI contracts for produced topics |
 | **3 — production** | separate namespaces and a namespace-scoped deploy runner where trust requires it; larger VM or second node; real domain and trusted certificates | — |
 
@@ -312,8 +333,10 @@ To agree with the partners:
 2. **Contracts**: is an AsyncAPI description required before onboarding, or
    can it follow?
 
-Decided: partners run their own datastores; the platform does not host
-partner databases.
+With T4.2:
+
+3. **History interface**: T4.2's query service as the way other partners
+   retrieve data older than topic retention?
 
 For the NTUA team:
 
@@ -321,5 +344,9 @@ For the NTUA team:
 5. **Pilot schedule**: when does pilot need to run continuously?
 6. **VM size**: request now, or after measuring actual usage?
 
-> Note: `main` contains an empty `docs/partners-onboarding.md`. Once agreed,
-> the partner-facing onboarding steps from this model can go there.
+Decided: T4.2 runs the platform's datastores; other partners use data through
+Kafka topics and do not connect to the databases; partners deploy their own
+charts through the deploy workflow, behind the automated check.
+
+> The partner-facing version of this model is
+> [docs/partners-onboarding.md](../partners-onboarding.md).

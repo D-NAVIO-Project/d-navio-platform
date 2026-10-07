@@ -77,6 +77,12 @@ jobs:
             -f helm/dnavio-component/examples/t42-values.yaml \
             --set image.tag=ci \
             | kubeconform -strict -summary -kubernetes-version 1.30.0 -
+      - name: Reference partner chart passes the policy check and schema
+        run: |
+          pip install --quiet pyyaml
+          helm template t42-infra ./helm/dnavio-component/examples/infra-chart > infra.yaml
+          python3 scripts/partner-policy/check_partner_chart.py t42 dnavio-dev infra.yaml
+          kubeconform -strict -summary -kubernetes-version 1.30.0 infra.yaml
       - name: Validate infra manifests (allow unknown CRDs)
         run: |
           kubeconform \
