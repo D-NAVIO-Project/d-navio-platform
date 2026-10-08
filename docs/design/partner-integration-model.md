@@ -1,15 +1,9 @@
 # Partner Integration Model
 
-> **Status: PROPOSAL.** The approach below has been agreed within the NTUA
-> platform team; it still needs agreement with the partners. Nothing here is
-> implemented yet except where marked *(exists today)*. Points that still need a
-> decision are listed under [Open decisions](#open-decisions).
-
 ## Goal
 
-Every partner can add the components it needs, and those components can
-communicate with the platform and with each other — without the NTUA platform
-team building each component by hand, and without one partner's component
+Every partner can add the components needed, and those components can
+communicate with the platform and with each other without one partner's component
 being able to take down the platform.
 
 ## Where we stand
