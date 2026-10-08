@@ -87,18 +87,45 @@ Four ideas explain everything else in this guide:
 
 ## Step 1 — Request access (both paths)
 
-Open a **Partner onboarding request** issue in this repository:
-**Issues → New issue → Partner onboarding request**.
+Email the NTUA team at **`<NTUA contact email>`** with the subject
+`D-NAVIO onboarding request — <partner id>`, using the template below.
 
-> **This repository is public, so the issue is visible to anyone.** Never put
-> passwords, tokens, internal hostnames, IP addresses or personal data in it.
+```text
+Partner id:         (short prefix for all your resources, e.g. t42)
+Organisation:
+Technical contact:  (name, email)
+Hosting:            in-cluster | external
+Repository:         (in-cluster: your repository in the D-NAVIO-Project GitHub organisation)
 
-### Filling in the form
+Components (in-cluster) — one per line: name — purpose — memory
+  -
+
+Identities — one per role: name — which components use it
+  - svc-...
+
+Topics you produce — name — identity that writes — expected rate — retention
+  -
+
+Topics you consume — name — identity that reads
+  -
+
+Datastores you will run (if any) — name — memory — storage
+Object storage (MinIO) needed: yes | no
+Third-party credentials needed (names only, never values):
+Message contract (AsyncAPI) link:
+Notes:
+```
+
+> Never put passwords, tokens or secrets in the request. Credentials are
+> exchanged separately (see [Path B](#path-b--external)).
+
+### Filling in the template
 
 | Field | How to decide |
 |-------|---------------|
 | **Partner id** | Short and stable — it becomes part of every resource name. Your task or tool name works well (`t42`, `dss`, `xai`). |
 | **Hosting** | *In-cluster* if your components should run on the platform; *External* if they run in your own environment. |
+| **Repository** | In-cluster partners deploy from a repository in the `D-NAVIO-Project` GitHub organisation — the platform's build machine only runs jobs for repositories there. |
 | **Components** (in-cluster) | One line per service, with a memory estimate (see [choosing memory](#choosing-memory)). |
 | **Identities** | One per **role**. Components that produce and consume the same topics can share one identity; give a component its own identity if it needs different topic access. Name them `svc-<role>`, e.g. `svc-dml`. |
 | **Topics you produce** | Name them `dnavio.<component>.<entity>.<qualifier>` (e.g. `dnavio.dss.recommendations.issued`). Give the expected rate (messages per second or per day) and how long they must be kept. |
@@ -108,7 +135,7 @@ Open a **Partner onboarding request** issue in this repository:
 
 ### What happens next
 
-The NTUA team reviews the request, then creates your identities, topics and access rules, and replies on the issue with
+The NTUA team reviews the request, then creates your identities, topics and access rules, and replies by email with
 what you need for the next steps, for example:
 
 > Approved. Identity `svc-dss`: use `credentials/svc-dss-client-id` and
@@ -118,10 +145,10 @@ what you need for the next steps, for example:
 > shared workflows as `@main`.
 
 For an **external** partner, the reply only confirms approval; your
-credentials are sent through a private channel.
+credentials are sent separately, through a private channel agreed with you.
 
 **To change anything later** (a new topic, another identity, more memory),
-comment on the same issue.
+reply to the same email thread.
 
 ---
 
@@ -266,7 +293,7 @@ Message formats are defined in T4.2's contracts
 **History.** Topics keep data for a limited time (above), so Kafka is not an
 archive. Data older than that is held by T4.2, which plans to serve historical
 queries (time windows, exports) through its query service. Ask on your
-onboarding issue if you need history.
+NTUA team if you need history.
 
 **Consumer groups.** Give each consumer its own group id, prefixed with your
 partner id (`t42-frs-derive`). Two components sharing a group id split the
@@ -308,7 +335,7 @@ components:
 <a id="choosing-memory"></a>**Choosing memory.** Start from what the service
 uses on your machine plus ~50%. Typical starting points: Go 64Mi,
 Python/Node.js 128–256Mi, Java (JVM) 512Mi or more. The sum of your
-components must stay within the budget agreed on your onboarding issue.
+components must stay within the budget agreed in the NTUA reply.
 
 The deploy is **refused with a message naming the component and field** if
 the values file bundles a platform service or a database, misses memory or a
@@ -418,7 +445,8 @@ You do not need cluster access: everything is visible in the workflow run.
 Your components run in your own environment and connect over the network.
 
 1. **Receive your credentials.** Once your request is approved, the NTUA team
-   sends you, through a private channel (never the issue): your client id and
+   sends you, through a private channel agreed with you (never in the
+   onboarding email thread): your client id and
    client secret, the D-NAVIO CA certificate (`ca.crt`), and the platform
    endpoints — the broker address (`<broker>`) and the Keycloak base URL
    (`<keycloak>`).
@@ -447,12 +475,12 @@ apply to you as well.
 | Pod not ready, restarting | Health path or port wrong, or the service crashes on start | Check the logs in *Diagnostics*; check `port` and `health` |
 | `OOMKilled` | The service needs more memory | Raise `memory` (within your budget) |
 | Kafka: `SASL authentication failed` / invalid token | Wrong client id/secret mapping or token URL | Check `secretEnv` and the token endpoint variable |
-| Kafka: `TOPIC_AUTHORIZATION_FAILED` | Your identity may not write to that topic | Request it on your onboarding issue |
-| Kafka: `UNKNOWN_TOPIC_OR_PARTITION` | The topic does not exist | Request it on your onboarding issue |
+| Kafka: `TOPIC_AUTHORIZATION_FAILED` | Your identity may not write to that topic | Request it from the NTUA team (reply to your onboarding thread) |
+| Kafka: `UNKNOWN_TOPIC_OR_PARTITION` | The topic does not exist | Request it from the NTUA team (reply to your onboarding thread) |
 | Consumer receives nothing | Group already read to the end, or nothing produced yet | Check the group id; produce a test message |
 | Workflow: `workflow was not found` | Wrong `@ref` for the shared workflows | Use the ref the NTUA team gave you |
 
-Still stuck? Comment on your onboarding issue with a link to the failed run.
+Still stuck? Email the NTUA team with a link to the failed run.
 
 ---
 
@@ -463,11 +491,11 @@ Still stuck? Comment on your onboarding issue with a link to the failed run.
 | Use the platform's Kafka and Keycloak | Run your own Kafka, Redpanda or Keycloak |
 | Get data through topics; ask T4.2 for history | Connect to the platform databases directly |
 | Prefix everything with your partner id | Use generic names (`api`, `postgres`) |
-| Keep credentials in `secretEnv` | Put credentials in values files, issues or code |
+| Keep credentials in `secretEnv` | Put credentials in values files, emails or code |
 | Set memory and health checks | Deploy without limits — the platform is shared |
 | Name topics `dnavio.<component>.<entity>.<qualifier>` | Write to topics you have not requested |
-| Request changes on your onboarding issue | Change platform resources yourself |
+| Request changes by email to the NTUA team | Change platform resources yourself |
 
 ---
 
-*Questions: comment on your onboarding issue, or contact the NTUA team.*
+*Questions: email the NTUA team at `<NTUA contact email>`.*

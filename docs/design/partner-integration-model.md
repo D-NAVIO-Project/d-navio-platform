@@ -64,7 +64,7 @@ The platform is a **shared service provider**; partners bring **components**.
  deploy/dnavio-values.yaml                       helm/dnavio-component
  .github/workflows/deploy.yml ──calls──►         reusable build + deploy workflows
                                                  partners list (identities, topics)
-                    onboarding request (issue) ─► applied by NTUA
+                    onboarding request (email) ─► applied by NTUA
                                       │
  ┌─ namespace dnavio-dev ─────────────▼────────────────────────────┐
  │  release dnavio-platform: kafka, keycloak, minio, credentials   │
@@ -80,7 +80,7 @@ The platform is a **shared service provider**; partners bring **components**.
 |---|---|---|
 | Broker, Keycloak, TLS | owns and operates | uses |
 | Platform datastores (Postgres, Mongo) | — | **T4.2 runs them**, in its own chart; others use data via Kafka |
-| Identities, topics, ACLs | applies on request | **requests** (issue form) |
+| Identities, topics, ACLs | applies on request | **requests** (by email) |
 | Credentials Secrets | creates and keeps stable | references by key |
 | Component chart, build/deploy workflows | provides and maintains | uses |
 | Component code, Dockerfiles, values file | reviews on onboarding | **owns** |
@@ -220,8 +220,10 @@ PostgreSQL with a stable generated password and puts the connection string in
 
 ## 3. Onboarding by request
 
-Partners **request**; NTUA **applies**. The request is a GitHub issue form in
-this repository ("Partner onboarding request") asking for:
+Partners **request**; NTUA **applies**. Requests arrive by email, using a
+template in `docs/partners-onboarding.md` (a GitHub issue form was dropped: this
+repository is public, and requests carry contact details). The template asks
+for:
 
 - partner name, organisation, technical contact
 - hosting: in-cluster or external (e.g. MAG)
@@ -309,7 +311,7 @@ is exposed beyond the consortium. The hardening path is in phase 3.
 
 | Phase | Platform (NTUA) | Partner |
 |-------|-----------------|---------|
-| **1 — first partner** | onboarding issue form; `partners` values driving identities, topics and ACLs; `helm/dnavio-component`; reusable build (step A) and deploy workflows; PriorityClasses + LimitRange; Kafka FQDN | T4.2: OAUTHBEARER in its Kafka client, drop Redpanda, datastores as its own chart (`t42-infra`), add `deploy/dnavio-values.yaml` |
+| **1 — first partner** | onboarding request template (email); `partners` values driving identities, topics and ACLs; `helm/dnavio-component`; reusable build (step A) and deploy workflows; PriorityClasses + LimitRange; Kafka FQDN | T4.2: OAUTHBEARER in its Kafka client, drop Redpanda, datastores as its own chart (`t42-infra`), add `deploy/dnavio-values.yaml` |
 | **2 — more partners** | GHCR builds (step B); deny-by-default ACLs (incl. consumer-group READ); metrics-server and capacity review | AsyncAPI contracts for produced topics |
 | **3 — production** | separate namespaces and a namespace-scoped deploy runner where trust requires it; larger VM or second node; real domain and trusted certificates | — |
 

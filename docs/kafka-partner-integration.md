@@ -11,7 +11,7 @@ This guide explains how to connect your application to the D-NAVIO message broke
 
 ## 1. What to Request from the NTUA Team
 
-Request access with the onboarding form (see the [Partner Onboarding Guide](partners-onboarding.md#step-1--request-access-both-paths)). Once your request is approved, the NTUA team provides the following through a private channel:
+Request access by email (see the [Partner Onboarding Guide](partners-onboarding.md#step-1--request-access-both-paths)). Once your request is approved, the NTUA team provides the following through a private channel:
 
 | Item | Description |
 |------|-------------|
