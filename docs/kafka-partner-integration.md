@@ -1,6 +1,6 @@
 # D-NAVIO Kafka Integration Guide for Partners
 
-This guide explains how to connect your application to the D-NAVIO message broker **from outside the platform cluster** — the external path. Start with the [Partner Onboarding Guide](partners-onboarding.md): it covers how to request access, and the in-cluster path for components that run on the D-NAVIO platform itself.
+This guide explains how to connect a component **hosted at your premises** (*Hosted Location: Local premises* in your Component & Interfaces Specification) to the D-NAVIO Message Broker (Kafka). Start with the [Partner Onboarding Guide](partners-onboarding.md): it covers how to request access, and the path for components hosted at NTUA.
 
 > **Endpoints.** This guide writes the platform endpoints as placeholders:
 > `<broker>` — the broker address (`host:port`), and `<keycloak>` — the
@@ -15,12 +15,12 @@ Request access by email (see the [Partner Onboarding Guide](partners-onboarding.
 
 | Item | Description |
 |------|-------------|
-| **Client ID** | A unique identifier for your application (e.g. `partner-maggioli`) |
+| **Client ID** | The identifier of your component's identity (e.g. `svc-xyz`) |
 | **Client Secret** | A secret credential paired with your Client ID |
 | **CA certificate** | The D-NAVIO CA certificate (`ca.crt`) used to verify the TLS connection to the broker and the token endpoint |
-| **Topic list** | The specific Kafka topics you are authorized to produce to or consume from |
+| **Topic list** | The Kafka topics (the *channels* of your specification) you are authorized to produce to or consume from |
 
-These credentials are created in D-NAVIO's identity provider (Keycloak) and are specific to your application. Do not share them across teams or applications.
+These credentials are created in D-NAVIO's identity provider (Keycloak) and are specific to your component. Do not share them with other teams or components.
 
 ---
 
@@ -145,10 +145,10 @@ Confirm the exact schema with the NTUA team before going live — schemas may ev
 ## 5. Deploying in Your Own Kubernetes Cluster
 
 > This section is for components running in **your own** cluster. If your
-> components run on the D-NAVIO platform cluster, follow
-> [Path A of the Partner Onboarding Guide](partners-onboarding.md#path-a--in-cluster)
+> component is hosted at NTUA, follow
+> [Path A of the Partner Onboarding Guide](partners-onboarding.md#path-a--hosted-at-ntua)
 > instead: there you never create credential Secrets yourself, and you connect
-> to `kafka:9092` inside the cluster.
+> to `kafka:9092` inside the platform.
 
 If your application runs in your own Kubernetes cluster, store credentials as a Secret and inject them as environment variables.
 
@@ -392,7 +392,7 @@ kafka_conf = {
 
 ## 8. Consumer Group Best Practices
 
-- Use a **unique group ID per application** — e.g. `partner-maggioli-telemetry-consumer`. Sharing a group ID across unrelated applications causes unexpected load balancing.
+- Use a **unique group ID per consumer, prefixed with your Component ID** — e.g. `xyz-telemetry-consumer`. Consumers sharing a group ID split the messages between them instead of each receiving all of them.
 - Use `auto.offset.reset: earliest` on first deploy to read all existing messages. Switch to `latest` once caught up if you only need new messages.
 - **Do not set `enable.auto.commit: false`** unless you are implementing manual offset management — the default auto-commit is sufficient for most use cases.
 - If your consumer restarts frequently, increase `session.timeout.ms` (default 45s) to prevent unnecessary partition rebalancing.
@@ -403,7 +403,7 @@ kafka_conf = {
 
 - **TLS on all external endpoints** — the broker's external listener uses `SASL_SSL` and the token endpoint is HTTPS. The platform currently uses a D-NAVIO-issued CA, so your client must trust the `ca.crt` provided during onboarding. Do not disable certificate verification in production code.
 - **Token TTL is 5 minutes** — the client libraries handle refresh automatically. Do not cache tokens manually.
-- **One client per application** — do not share `client_id` / `client_secret` across teams or services.
+- **One identity per role** — components with the same topic access may share one; never share a `client_id` / `client_secret` with another team.
 - **Use only the topics agreed in your onboarding request.** Access rules are being introduced topic by topic; where one applies, a write without permission fails with `TOPIC_AUTHORIZATION_FAILED`. In `confluent-kafka` this error only appears in the delivery callback, not from `flush()` — check it (see section 6).
 
 ---
@@ -417,7 +417,7 @@ kafka_conf = {
 - [ ] Token obtained successfully via `curl` (using `--cacert ca.crt`)
 - [ ] Test message produced and consumed end-to-end
 - [ ] Kubernetes Secret created and injected into your Deployment
-- [ ] Consumer group ID follows the naming convention `partner-<name>-<purpose>`
+- [ ] Consumer group ID follows the naming convention `<component id>-<purpose>`
 
 ---
 
