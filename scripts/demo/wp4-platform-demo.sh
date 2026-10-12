@@ -36,8 +36,8 @@ KAFKA_IMAGE="${KAFKA_IMAGE:-confluentinc/cp-kafka:7.8.3}"
 bold=$'\e[1m'; dim=$'\e[2m'; green=$'\e[32m'; red=$'\e[31m'; reset=$'\e[0m'
 step()  { printf '\n%s== %s ==%s\n' "$bold" "$1" "$reset"; }
 show()  { printf '%s$ %s%s\n' "$dim" "$*" "$reset"; }
-ok()    { printf '%s  ✔ %s%s\n' "$green" "$1" "$reset"; }
-no()    { printf '%s  ✘ %s%s\n' "$red" "$1" "$reset"; }
+ok()    { printf '%s  [ok] %s%s\n' "$green" "$1" "$reset"; }
+no()    { printf '%s  [!!] %s%s\n' "$red" "$1" "$reset"; }
 info()  { printf '    %s\n' "$1"; }
 pause() { [ "${NO_PAUSE:-0}" = 1 ] || read -r -p "  [Enter] " _; }
 
@@ -167,7 +167,21 @@ out="$(client "kafka-console-consumer --bootstrap-server kafka:9092 --consumer.c
   --topic $LIVE_TOPIC --from-beginning --max-messages 3 --timeout-ms 20000 --group $GROUP")"
 msgs="$(grep -vE '^\[|^Processed a total|WARN|ERROR|Exception|^[[:space:]]+at ' <<< "$out" | head -3)"
 if [ -n "$msgs" ]; then
-  cut -c1-150 <<< "$msgs" | sed 's/^/    /'
+  # T4.2 envelopes carry a telemetry observation (contracts/telemetry-observation.v1)
+  # in "payload": show the reading itself rather than the envelope ids.
+  MSGS="$msgs" python3 - <<'PY'
+import json, os
+print("    observed (UTC)       vessel       reading                                quality")
+for line in os.environ["MSGS"].splitlines():
+    try:
+        obs = json.loads(line).get("payload") or {}
+        value = next(iter((obs.get("value") or {}).values()), "?")
+        reading = f"{obs.get('metric', '?')} = {value} {obs.get('unit', '')}".strip()
+        quality = (obs.get("quality") or {}).get("status", "good")
+        print(f"    {str(obs.get('observed_at', '?'))[:19]:<20} {obs.get('vessel_id', '?'):<12} {reading:<38} {quality}")
+    except (ValueError, AttributeError):
+        print("    " + line[:110])
+PY
   ok "read as User:$cid from T4.2's topic $LIVE_TOPIC"
 elif grep -q Exception <<< "$out"; then
   grep -m2 Exception <<< "$out" | cut -c1-150 | sed 's/^/    /'
