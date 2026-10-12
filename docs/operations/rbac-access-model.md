@@ -73,8 +73,8 @@ account.
 ## Connection Access Coverage
 
 How each connection into and out of the platform is authenticated. The D-NAVIO
-platform secures the resources it operates — the message bus (Kafka), IAM
-(Keycloak) and object storage (MinIO). Partner-owned datastores (MongoDB,
+platform secures the resources it operates — the message bus (Kafka) and IAM
+(Keycloak). Partner-owned datastores (MongoDB,
 PostgreSQL) are provisioned and secured by the owning component, not the platform.
 
 | Connection | Mechanism | Status |

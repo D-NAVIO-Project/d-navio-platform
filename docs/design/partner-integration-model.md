@@ -60,14 +60,14 @@ The platform is a **shared service provider**; partners bring **components**.
 ```
  Partner repo                                    Platform repo (NTUA)
  ────────────                                    ────────────────────
- services + Dockerfiles                          broker · Keycloak · MinIO
+ services + Dockerfiles                          broker · Keycloak
  deploy/dnavio-values.yaml                       helm/dnavio-component
  .github/workflows/deploy.yml ──calls──►         reusable build + deploy workflows
                                                  partners list (identities, topics)
                     onboarding request (email) ─► applied by NTUA
                                       │
  ┌─ namespace dnavio-dev ─────────────▼────────────────────────────┐
- │  release dnavio-platform: kafka, keycloak, minio, credentials   │
+ │  release dnavio-platform: kafka, keycloak, credentials          │
  │  release t42:     t42-ingest-api, t42-stream-processor, ...     │
  │  release t42-infra: t42-postgres, t42-mongo, t42-secrets (own)  │
  │  release <next>:  <next>-...                                    │
@@ -171,7 +171,7 @@ construction:
 
 | Rule | How it is guaranteed |
 |------|----------------------|
-| No platform services (broker, Keycloak, MinIO) | Their images are refused |
+| No platform services (broker, Keycloak) | Their images are refused |
 | No datastores in the service chart | Their images are refused — datastores go in the partner's own chart |
 | Memory limits and health checks on every container | Required fields; the deploy fails without them |
 | Credentials only from Secrets | `secretEnv` resolves only the `credentials` alias (platform identities) and the `partner` alias (`<partner>-secrets`, the partner's own) |
@@ -199,7 +199,7 @@ automated check of the rendered manifests
 | Services `ClusterIP` only | Nothing exposed outside the cluster |
 | Memory limit on every container | The VM is shared |
 | No host network/PID/IPC, hostPath or privileged containers | No access to the VM itself |
-| No platform service images (Kafka, Keycloak, MinIO) | One broker, one identity provider |
+| No platform service images (Kafka, Keycloak) | One broker, one identity provider |
 | No literal credentials in environment variables | Credentials only from Secrets |
 
 A reference chart (`helm/dnavio-component/examples/infra-chart`) runs
@@ -216,7 +216,8 @@ PostgreSQL with a stable generated password and puts the connection string in
 - **History beyond topic retention** (telemetry topics keep 7 days) comes from
   T4.2, which already implements replay windows and exports in its query
   service — to be agreed with T4.2 as the platform's history interface.
-- The platform itself offers MinIO (object storage) on request.
+- The platform offers no object storage. MinIO appeared in the initial example
+  as a placeholder and will be removed from the platform chart.
 
 ## 3. Onboarding by request
 
@@ -276,7 +277,7 @@ trusted, or needs a hard memory cap.
 
 | | Memory requests | Memory limits |
 |---|---|---|
-| Platform (Kafka, Keycloak, MinIO), per environment | 0.9 GiB | 1.6 GiB |
+| Platform (Kafka, Keycloak; MinIO until it is removed), per environment | 0.9 GiB | 1.6 GiB |
 | Platform, dev + pilot | 1.8 GiB | 3.3 GiB |
 | VM total | 11 GiB | |
 

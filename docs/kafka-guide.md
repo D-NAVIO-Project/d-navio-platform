@@ -117,5 +117,4 @@ DYNAMO / DML / DSS / XAI / FRS / UI backend / Observability
 |----------------|------------------------------------------|
 | Kafka          | live events / async communication        |
 | Database / DML | structured, persisted data               |
-| MinIO          | files, datasets, large artefacts         |
 | Backend APIs   | current state, mappings, query access    |

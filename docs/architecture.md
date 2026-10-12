@@ -2,46 +2,42 @@
 
 ## Purpose
 
-This document describes the initial platform architecture for D-NAVIO.
-
-The goal of the platform is to provide a reproducible and documented
-starting point for event-driven ingestion, authentication, and storage
-of datasets and digital twin related artifacts.
+This document describes the platform architecture for D-NAVIO: the shared
+services every component uses, and where data lives.
 
 ## Core Services
 
-The initial platform includes:
+The platform provides:
 
-- Kafka for event streaming
+- Kafka for event streaming between components
 - Keycloak for authentication and identity management
-- MinIO for object storage
+
+Data stores are not platform services. Each component runs the stores it owns
+(T4.2's Data Management Layer runs PostgreSQL and MongoDB), and other components
+receive that data through Kafka topics or the owner's APIs.
+
+> MinIO appeared in the initial example as a placeholder for object storage. It
+> is not part of the platform; the chart still deploys it until it is removed.
 
 ## High-Level Architecture
 
 ```text
-External Systems / Partners
+Pilot data sources / partner systems
         │
-        │ upload raw datasets / files
+        │ telemetry, files (T4.2 ingest-api)
         ▼
-      MinIO
+T4.2 Data Management Layer ── stores ──► PostgreSQL · MongoDB (owned by T4.2)
         │
-        │ emit metadata + object reference
+        │ validated live data, failure records
         ▼
-      Kafka
-        │
-        │ trigger processing / analytics / digital twin workflows
-        ▼
-Processing Services
+      Kafka ◄──► other components (DYNAMO, DSS, XAI Suite, HYDRA, UI backend)
 
-Authentication / authorization handled by Keycloak
+Every connection to Kafka is authenticated with a Keycloak token
 ```
 
 ## Design Principles
 
-### 1. Bulk data is stored in MinIO
-Large files, raw datasets, binary artifacts, and exports are stored in MinIO.
-
-### 2. Kafka carries events and metadata
+### 1. Kafka carries live events
 Kafka is used for:
 
 - telemetry event streaming
@@ -49,10 +45,13 @@ Kafka is used for:
 - orchestration signals and lifecycle events
 - processing notifications
 
-Kafka is not treated as persistent operational storage. Persistent structured
-telemetry, alerts, failures, and risk states are expected to be owned by the
-relevant DML/backend/FRS services, while MinIO stores large artefacts such as
-datasets, exports, binary files, and optional visualization assets.
+Kafka is not persistent storage: each topic keeps data for a limited time.
+
+### 2. Data stays with the component that owns it
+Persistent structured telemetry, alerts, failures, and risk states are owned by
+the relevant DML/backend/FRS services. Other components do not connect to those
+databases: they consume the owner's topics, and data older than a topic's
+retention comes from the owner's services (for T4.2, its query service).
 
 ### 3. Keycloak manages access
 Keycloak is used for:
@@ -63,11 +62,11 @@ Keycloak is used for:
 
 ## Example Data Flow
 
-1. A partner or external system uploads a dataset to MinIO
-2. A metadata event is published to Kafka
-3. A processing service consumes the event
-4. The processing service reads the file from MinIO
-5. Results are stored back in MinIO or emitted as new Kafka events
+1. A pilot system or partner sends telemetry to T4.2's ingest API
+2. T4.2 validates and stores it, and publishes it to `dnavio.dml.telemetry.normalized`
+3. A consuming component reads the topic, authenticated with its Keycloak token
+4. The consumer publishes its results as new Kafka events
+5. Data older than the topic's retention is requested from T4.2's query service
 
 ## Initial Development Scope
 
@@ -76,7 +75,6 @@ and a Kubernetes bootstrap deployment for the development cluster.
 
 - single-node Kafka in KRaft mode
 - single Keycloak instance
-- single MinIO instance
 
 ## Future Extensions
 

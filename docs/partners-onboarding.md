@@ -159,7 +159,6 @@ Topics you produce — topic name — Output ID(s) — how long messages must be
   -
 
 Third-party credentials needed (names only, never values):
-Object storage (MinIO) needed: yes | no
 Notes:
 ```
 
@@ -196,7 +195,6 @@ Topics you produce — topic name — Output ID(s) — how long messages must be
   - dnavio.xyz.faults.detected — XYZ.out.01 — 30 days
 
 Third-party credentials needed (names only, never values): none
-Object storage (MinIO) needed: no
 Notes:
 ```
 
@@ -261,7 +259,6 @@ your repository and the pipeline runs in it.
 | Your identities | In your values file as `credentials/<client>-client-id` and `credentials/<client>-client-secret` |
 | Your own secrets | Secret `<cmp>-secrets`, in your values file as `partner/<key>` (e.g. third-party API keys, or your own database's connection string — see A5) |
 | Your other containers | `http://<cmp>-<name>:<port>`, e.g. `http://xyz-inference-api:8080` |
-| Object storage | MinIO, on request |
 | Access from outside | Not by default: containers are reachable only inside the platform. If a container has its own UI or an API used from outside, say so in your specification and the NTUA team arranges access. |
 
 Inside the platform no TLS certificate is needed: traffic stays on the
@@ -725,7 +722,7 @@ The deploy runs the same check, and is refused if your chart:
 - exposes a Service outside the platform (only `ClusterIP`);
 - misses a memory limit on any container;
 - uses host networking, host paths or privileged containers;
-- runs a platform service image (Kafka, Keycloak, MinIO);
+- runs a platform service image (Kafka, Keycloak);
 - puts a credential in a plain environment variable (use
   `valueFrom.secretKeyRef`, as the reference chart does).
 

@@ -23,14 +23,17 @@ The initial platform stack includes:
 
 - **Kafka** (KRaft mode) — asynchronous event backbone and message broker
 - **Keycloak** — authentication and identity management
-- **MinIO** — object storage for datasets and binary artefacts
+
+> MinIO appeared in the initial example as a placeholder for object storage. It
+> is not part of the platform; the chart and Compose files still deploy it until
+> it is removed.
 
 ## Architecture Principles
 
 D-NAVIO uses Kafka as the event backbone for live events and async
 communication between platform components (DML, DYNAMO, DSS, XAI, FRS,
-UI backend, Observability). Bulk datasets and binary artefacts are stored
-in MinIO. Authentication and authorisation are handled through Keycloak.
+UI backend, Observability). Data stays with the component that owns it.
+Authentication and authorisation are handled through Keycloak.
 
 Kafka carries live events only — it is not used as a database.
 The initial logical topic set covers:
