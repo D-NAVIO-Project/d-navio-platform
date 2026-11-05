@@ -23,6 +23,7 @@ REALM="${REALM:-d-navio}"
 CLIENT="${DEMO_CLIENT:-svc-test-producer}"
 KC_URL="${KC_URL:-http://127.0.0.1:30080}"
 LIVE_TOPIC="${LIVE_TOPIC:-dnavio.dml.telemetry.normalized}"
+FALLBACK_TOPIC="${FALLBACK_TOPIC:-dnavio.frs.failures.reported}"
 DENIED_TOPIC="dnavio.ops.admin-audit"
 RUN_ID="$(date +%s)"
 POD="wp4-demo-${RUN_ID}"
@@ -41,21 +42,35 @@ no()    { printf '%s  [!!] %s%s\n' "$red" "$1" "$reset"; }
 info()  { printf '    %s\n' "$1"; }
 pause() { [ "${NO_PAUSE:-0}" = 1 ] || read -r -p "  [Enter] " _; }
 
-# Loopback BROKER listener (PLAINTEXT, broker super-user): admin tasks only.
-kafka_admin() { kubectl exec -n "$NS" deploy/kafka -c kafka -- "$@" 2>/dev/null; }
 # Commands run in the demo client pod; they never contain a secret.
 client() { kubectl exec -n "$NS" "$POD" -c client -- bash -c "$1" 2>&1; }
+# Admin tasks (the temporary topic, offsets, consumer groups) also run in the
+# demo client pod, with its token. Never run Kafka's tools inside the broker
+# container: each starts a second JVM within the broker's memory limit, which
+# can get the broker itself killed and restarted.
+admin() {
+  kubectl exec -n "$NS" "$POD" -c client -- "$@" \
+    --bootstrap-server kafka:9092 --command-config /tmp/good.properties 2>/dev/null
+}
+# Messages a topic holds now (latest minus earliest offset), or "?" if unknown.
+topic_size() {
+  local hi lo
+  hi="$(admin kafka-get-offsets --topic "$1" --time -1)"
+  lo="$(admin kafka-get-offsets --topic "$1" --time -2)"
+  if [ -z "$hi" ] || [ -z "$lo" ]; then echo "?"; return; fi
+  echo $(( $(awk -F: '{s+=$NF} END {print s+0}' <<< "$hi") - $(awk -F: '{s+=$NF} END {print s+0}' <<< "$lo") ))
+}
 secret_key() {
   kubectl get secret "$CREDS" -n "$NS" -o go-template="{{index .data \"$1\"}}" 2>/dev/null \
     | base64 -d 2>/dev/null
 }
 
 cleanup() {
-  kubectl delete pod "$POD" -n "$NS" --ignore-not-found --wait=false >/dev/null 2>&1
-  kafka_admin kafka-topics --bootstrap-server 127.0.0.1:9091 --delete --topic "$TOPIC" >/dev/null
+  admin kafka-topics --delete --topic "$TOPIC" >/dev/null
   for g in "$GROUP" "${GROUP}-own"; do
-    kafka_admin kafka-consumer-groups --bootstrap-server 127.0.0.1:9091 --delete --group "$g" >/dev/null
+    admin kafka-consumer-groups --delete --group "$g" >/dev/null
   done
+  kubectl delete pod "$POD" -n "$NS" --ignore-not-found --wait=false >/dev/null 2>&1
 }
 trap cleanup EXIT
 
@@ -162,40 +177,72 @@ for _ in $(seq 1 40); do
   [ "$(kubectl get pod "$POD" -n "$NS" -o jsonpath='{.status.phase}' 2>/dev/null)" = Running ] && break
   sleep 2
 done
-show "kafka-console-consumer --bootstrap-server kafka:9092 --consumer.config <token config> --topic $LIVE_TOPIC --max-messages 3"
-out="$(client "kafka-console-consumer --bootstrap-server kafka:9092 --consumer.config /tmp/good.properties \
-  --topic $LIVE_TOPIC --from-beginning --max-messages 3 --timeout-ms 20000 --group $GROUP")"
-msgs="$(grep -vE '^\[|^Processed a total|WARN|ERROR|Exception|^[[:space:]]+at ' <<< "$out" | head -3)"
-if [ -n "$msgs" ]; then
-  # T4.2 envelopes carry a telemetry observation (contracts/telemetry-observation.v1)
-  # in "payload": show the reading itself rather than the envelope ids.
+# Telemetry is kept 7 days; if T4.2 has not replayed pilot data since, that
+# topic is empty and the consumer would only time out. Then fall back to T4.2's
+# failure reports (derived from the same telemetry, kept indefinitely).
+held=0
+for t in $LIVE_TOPIC $FALLBACK_TOPIC; do
+  held="$(topic_size "$t")"
+  if [ "$held" = 0 ]; then
+    info "$t holds no messages (T4.2 has published nothing there recently)"
+  else
+    LIVE_TOPIC="$t"; break
+  fi
+done
+out=""; msgs=""
+if [ "$held" != 0 ]; then
+  [ "$held" = "?" ] || info "$LIVE_TOPIC holds $held messages"
+  show "kafka-console-consumer --bootstrap-server kafka:9092 --consumer.config <token config> --topic $LIVE_TOPIC --max-messages 3"
+  out="$(client "kafka-console-consumer --bootstrap-server kafka:9092 --consumer.config /tmp/good.properties \
+    --topic $LIVE_TOPIC --from-beginning --max-messages 3 --timeout-ms 20000 --group $GROUP")"
+  msgs="$(grep -vE '^\[|^Processed a total|WARN|ERROR|Exception|^[[:space:]]+at ' <<< "$out" | head -3)"
+fi
+if [ "$held" = 0 ]; then
+  no "nothing to read; ask T4.2 to replay pilot data before the demo"
+elif [ -n "$msgs" ]; then
+  # T4.2 envelopes carry their record in "payload" (contracts/*.v1): show the
+  # record itself rather than the envelope ids.
   MSGS="$msgs" python3 - <<'PY'
 import json, os
-print("    observed (UTC)       vessel       reading                                quality")
+rows = []
 for line in os.environ["MSGS"].splitlines():
     try:
-        obs = json.loads(line).get("payload") or {}
-        value = next(iter((obs.get("value") or {}).values()), "?")
-        reading = f"{obs.get('metric', '?')} = {value} {obs.get('unit', '')}".strip()
-        quality = (obs.get("quality") or {}).get("status", "good")
-        print(f"    {str(obs.get('observed_at', '?'))[:19]:<20} {obs.get('vessel_id', '?'):<12} {reading:<38} {quality}")
+        env = json.loads(line)
+        p = env.get("payload") or {}
+        if env.get("event_type") == "dnavio.failure.report":
+            sev = (p.get("severity") or {}).get("label") or "csn %s" % (p.get("severity") or {}).get("csn", "?")
+            what = "%s: %s" % (p.get("system", "?"), p.get("summary", "?"))
+            rows.append(("failure", str(p.get("detected_at", "?"))[:19], p.get("vessel_id", "?"),
+                         what[:52], "%s, %s" % (sev, p.get("status", "?"))))
+        else:
+            value = next(iter((p.get("value") or {}).values()), "?")
+            reading = ("%s = %s %s" % (p.get("metric", "?"), value, p.get("unit", ""))).strip()
+            rows.append(("reading", str(p.get("observed_at", "?"))[:19], p.get("vessel_id", "?"),
+                         reading[:52], (p.get("quality") or {}).get("status", "good")))
     except (ValueError, AttributeError):
-        print("    " + line[:110])
+        rows.append(("raw", line[:110]))
+kind = next((r[0] for r in rows if r[0] != "raw"), "reading")
+head = ("detected (UTC)", "failure", "severity, status") if kind == "failure" else ("observed (UTC)", "reading", "quality")
+print("    %-20s %-12s %-52s %s" % (head[0], "vessel", head[1], head[2]))
+for r in rows:
+    print("    " + r[1] if r[0] == "raw" else "    %-20s %-12s %-52s %s" % r[1:])
 PY
   ok "read as User:$cid from T4.2's topic $LIVE_TOPIC"
+elif grep -q TimeoutException <<< "$out"; then
+  no "no message arrived from $LIVE_TOPIC within 20 seconds"
 elif grep -q Exception <<< "$out"; then
   grep -m2 Exception <<< "$out" | cut -c1-150 | sed 's/^/    /'
   no "could not read $LIVE_TOPIC"
 else
-  info "no messages on $LIVE_TOPIC in the last 7 days (has T4.2 replayed data?)"
-  ok "connected and authorised as User:$cid; the topic is empty"
+  no "no messages read from $LIVE_TOPIC"
 fi
 pause
 
 # --- 4 ------------------------------------------------------------------------
 step "4 · It writes to a topic it may use, and reads it back"
-kafka_admin kafka-topics --bootstrap-server 127.0.0.1:9091 --create --topic "$TOPIC" \
-  --partitions 1 --replication-factor 1 >/dev/null
+if ! admin kafka-topics --create --topic "$TOPIC" --partitions 1 --replication-factor 1 >/dev/null; then
+  no "the broker could not create the temporary topic $TOPIC"
+fi
 marker="hello from $cid, run $RUN_ID"
 show "echo '$marker' | kafka-console-producer --bootstrap-server kafka:9092 --producer.config <token config> --topic $TOPIC"
 out="$(client "echo '$marker' | kafka-console-producer --bootstrap-server kafka:9092 \
