@@ -7,9 +7,10 @@ name: Deploy component
 #
 # Deploys up to two Helm releases into the platform namespace of the chosen
 # environment:
-#   <partner>-infra  the partner's own chart (`chart`), e.g. its datastores.
-#                    Rendered and checked against the platform rules
-#                    (scripts/partner-policy) before install. Deployed first.
+#   <partner>-infra  the partner's own chart (`chart`). Rendered and checked
+#                    against the platform rules (scripts/partner-policy)
+#                    before install. Deployed first. Receives the commit's
+#                    image tag as the value `dnavio.imageTag`.
 #   <partner>        the partner's services (`values`), from helm/dnavio-component.
 # Partners have no cluster access, so on failure this workflow prints the
 # state, events and logs of the partner's pods into the run log.
@@ -137,8 +138,11 @@ jobs:
               [ -f "partner/${CHART_VALUES}" ] || { echo "::error::chart-values file '${CHART_VALUES}' not found"; exit 1; }
               chart_args=(-f "partner/${CHART_VALUES}")
             fi
+            # dnavio.imageTag: the commit's image tag, so an own chart can run
+            # images built by build-component.yml (<partner>/<image>:<git sha>).
             helm template "$INFRA_RELEASE" "partner/${CHART}" \
-              --namespace "$NAMESPACE" "${chart_args[@]}" > own.yaml
+              --namespace "$NAMESPACE" "${chart_args[@]}" \
+              --set-string dnavio.imageTag="$TAG" > own.yaml
             python3 platform/scripts/partner-policy/check_partner_chart.py "$PARTNER" "$NAMESPACE" own.yaml
             cat own.yaml >> rendered.yaml
           fi
@@ -207,6 +211,7 @@ jobs:
           [ -n "$CHART_VALUES" ] && chart_args=(-f "partner/${CHART_VALUES}")
           helm upgrade --install "$INFRA_RELEASE" "partner/${CHART}" \
             --namespace "$NAMESPACE" "${chart_args[@]}" \
+            --set-string dnavio.imageTag="$TAG" \
             --history-max 10 \
             --wait \
             --timeout "$TIMEOUT"
