@@ -102,11 +102,20 @@ keycloak:
   # partners; HTTPS so partner credentials are not sent in cleartext.
   hostname: "https://147.102.6.143:30443"
   service:
-    type: NodePort
-    nodePort: 30080
-    # HTTPS port for external/partner token retrieval (client secrets are
-    # POSTed here, so this is the more sensitive of the two ports).
+    # HTTPS port for access from outside the cluster (partner token retrieval,
+    # the admin console). There is no plain-HTTP port outside the cluster.
     httpsNodePort: 30443
+  # Gateway (nginx) in front of Keycloak for traffic from outside the cluster.
+  # The platform realm's endpoints are open to everyone; the admin console and
+  # the master realm only to the source ranges below (the NTUA VPN). An empty
+  # list closes the admin console from outside altogether. In-cluster clients
+  # (keycloak:8080) do not pass through the gateway.
+  gateway:
+    image:
+      repository: nginxinc/nginx-unprivileged
+      tag: "1.27-alpine"
+    adminAllowedCIDRs:
+      - 147.102.224.0/24
   # Persist the H2 database so the realm + clients survive pod restarts.
   storage:
     size: 1Gi

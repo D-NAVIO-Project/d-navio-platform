@@ -6,25 +6,18 @@ metadata:
     {{- include "dnavio-platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: keycloak
 spec:
-  # NodePort in dev so partners can reach Keycloak for token retrieval.
-  # ClusterIP name (keycloak:8080) still works for in-cluster clients.
-  type: {{ .Values.keycloak.service.type }}
+  # In-cluster access only (keycloak:8080 for components, Kafka and the hook
+  # Jobs). Access from outside the cluster goes through keycloak-external.
+  type: ClusterIP
   ports:
     - name: http
       port: 8080
       targetPort: 8080
       protocol: TCP
-      {{- if eq .Values.keycloak.service.type "NodePort" }}
-      nodePort: {{ .Values.keycloak.service.nodePort }}
-      {{- end }}
-    # HTTPS — the port external/partner clients should use for token retrieval.
     - name: https
       port: 8443
       targetPort: 8443
       protocol: TCP
-      {{- if eq .Values.keycloak.service.type "NodePort" }}
-      nodePort: {{ .Values.keycloak.service.httpsNodePort }}
-      {{- end }}
   selector:
     {{- include "dnavio-platform.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: keycloak

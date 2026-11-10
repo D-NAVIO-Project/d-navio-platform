@@ -49,6 +49,16 @@ jobs:
             helm rollback "$RELEASE" -n "$NS" || true
           fi
 
+      # One-time migration: Keycloak's node port moves from Service keycloak to
+      # Service keycloak-external. Helm creates the new Service first, which
+      # fails while the old one still holds the port, so release it here.
+      - name: Release Keycloak's node port for keycloak-external
+        run: |
+          NS=dnavio-dev
+          if [ "$(kubectl get svc keycloak -n "$NS" -o jsonpath='{.spec.type}' 2>/dev/null)" = "NodePort" ]; then
+            kubectl patch svc keycloak -n "$NS" -p '{"spec":{"type":"ClusterIP"}}'
+          fi
+
       - name: Deploy to dnavio-dev
         env:
           KEYCLOAK_PASS: ${{ secrets.KEYCLOAK_ADMIN_PASSWORD }}
@@ -109,6 +119,13 @@ jobs:
             helm uninstall "$RELEASE" -n "$NS" || true
           elif [[ "$STATUS" == "pending-upgrade" || "$STATUS" == "pending-rollback" ]]; then
             helm rollback "$RELEASE" -n "$NS" || true
+          fi
+
+      - name: Release Keycloak's node port for keycloak-external
+        run: |
+          NS=dnavio-pilot
+          if [ "$(kubectl get svc keycloak -n "$NS" -o jsonpath='{.spec.type}' 2>/dev/null)" = "NodePort" ]; then
+            kubectl patch svc keycloak -n "$NS" -p '{"spec":{"type":"ClusterIP"}}'
           fi
 
       - name: Deploy to dnavio-pilot
