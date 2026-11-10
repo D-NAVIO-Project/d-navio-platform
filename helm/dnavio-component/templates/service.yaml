@@ -1,0 +1,22 @@
+{{- range $c := .Values.components }}
+{{- if $c.port }}
+{{- $ctx := dict "root" $ "c" $c }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  # Reachable in the namespace as http://<partner>-<component>:<port>
+  name: {{ include "dnavio-component.fullname" $ctx }}
+  labels:
+    {{- include "dnavio-component.labels" $ctx | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ $c.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "dnavio-component.selectorLabels" $ctx | nindent 4 }}
+{{- end }}
+{{- end }}

@@ -66,9 +66,9 @@ kubectl get pods,pvc,svc -n dnavio-dev
 
 Expected:
 
-- 3 pods `Running 1/1` — kafka, keycloak, minio
-- 2 PVCs `Bound` — kafka-data, minio-data
-- 3 Services `ClusterIP` — kafka, keycloak, minio
+- 2 pods `Running 1/1` — kafka, keycloak
+- 2 PVCs `Bound` — kafka-data, keycloak-data
+- 2 Services `ClusterIP` — kafka, keycloak
 
 ## Access Services
 
@@ -76,14 +76,11 @@ All services are `ClusterIP`. Use `kubectl port-forward` to reach them:
 
 ```bash
 kubectl port-forward svc/keycloak 18080:8080 -n dnavio-dev
-kubectl port-forward svc/minio 19000:9000 19001:9001 -n dnavio-dev
 ```
 
 | Service       | Forwarded endpoint           |
 |---------------|------------------------------|
 | Keycloak      | `http://localhost:18080`     |
-| MinIO Console | `http://localhost:19001`     |
-| MinIO API     | `http://localhost:19000`     |
 
 Default development credentials: `admin / adminadmin`
 

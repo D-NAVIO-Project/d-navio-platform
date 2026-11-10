@@ -7,18 +7,22 @@ D-NAVIO uses [Keycloak](https://www.keycloak.org/) as its identity provider. Par
 
 Both scenarios result in the same outcome: users get a JWT token issued by D-NAVIO Keycloak, usable across all D-NAVIO services.
 
+> **Endpoints.** This guide writes the Keycloak base URL as the placeholder
+> `<keycloak>` (`https://host:port`). The NTUA team sends you the real value
+> together with your credentials, through a private channel.
+
 ---
 
 ## D-NAVIO Identity Provider Details
 
 | Parameter | Value |
 |-----------|-------|
-| **Keycloak base URL** | `https://147.102.6.143:30443` |
+| **Keycloak base URL** | `<keycloak>` |
 | **Realm** | `d-navio` |
-| **OIDC discovery endpoint** | `https://147.102.6.143:30443/realms/d-navio/.well-known/openid-configuration` |
-| **Authorization endpoint** | `https://147.102.6.143:30443/realms/d-navio/protocol/openid-connect/auth` |
-| **Token endpoint** | `https://147.102.6.143:30443/realms/d-navio/protocol/openid-connect/token` |
-| **JWKS endpoint** | `https://147.102.6.143:30443/realms/d-navio/protocol/openid-connect/certs` |
+| **OIDC discovery endpoint** | `<keycloak>/realms/d-navio/.well-known/openid-configuration` |
+| **Authorization endpoint** | `<keycloak>/realms/d-navio/protocol/openid-connect/auth` |
+| **Token endpoint** | `<keycloak>/realms/d-navio/protocol/openid-connect/token` |
+| **JWKS endpoint** | `<keycloak>/realms/d-navio/protocol/openid-connect/certs` |
 
 > The discovery endpoint returns all URLs above automatically. Most OIDC libraries only need the base URL + realm name.
 >
@@ -28,11 +32,11 @@ Both scenarios result in the same outcome: users get a JWT token issued by D-NAV
 
 ## Scenario A — Browser-based SSO (no existing IdP)
 
-Use this when: partner users will create accounts in D-NAVIO Keycloak, or accounts are provisioned by the D-NAVIO team.
+Use this when: partner users will create accounts in D-NAVIO Keycloak, or accounts are provisioned by the NTUA team.
 
 ### Step 1 — D-NAVIO sets up a client in Keycloak
 
-The D-NAVIO team performs this in the Keycloak admin console (`https://147.102.6.143:30443` → Admin → `d-navio` realm):
+The NTUA team performs this in the Keycloak admin console (`d-navio` realm):
 
 1. **Clients → Create client**
    - Client type: `OpenID Connect`
@@ -88,7 +92,7 @@ app = FastAPI()
 CLIENT_ID     = "partner-maggioli"
 CLIENT_SECRET = "your-client-secret"   # omit for public/PKCE clients
 REDIRECT_URI  = "https://your-app.com/callback"
-KEYCLOAK_BASE = "https://147.102.6.143:30443/realms/d-navio/protocol/openid-connect"
+KEYCLOAK_BASE = os.environ["KEYCLOAK_URL"] + "/realms/d-navio/protocol/openid-connect"  # KEYCLOAK_URL = <keycloak>
 
 @app.get("/login")
 async def login():
@@ -129,7 +133,7 @@ export default NextAuth({
       id: "keycloak",
       name: "D-NAVIO",
       type: "oauth",
-      wellKnown: "https://147.102.6.143:30443/realms/d-navio/.well-known/openid-configuration",
+      wellKnown: "<keycloak>/realms/d-navio/.well-known/openid-configuration",
       clientId: "partner-maggioli",
       clientSecret: "your-client-secret",
       authorization: { params: { scope: "openid profile email" } },
@@ -169,7 +173,7 @@ spring:
             scope: openid, profile, email
         provider:
           dnavio:
-            issuer-uri: https://147.102.6.143:30443/realms/d-navio
+            issuer-uri: <keycloak>/realms/d-navio
 ```
 
 Spring Security handles the full login/callback flow automatically.
@@ -220,7 +224,7 @@ In Keycloak admin → `d-navio` realm → **Identity Providers → Add provider*
 |-------|-------|
 | Provider type | SAML v2.0 |
 | Alias | `partner-<name>` |
-| Service Provider Entity ID | `https://147.102.6.143:30443/realms/d-navio` |
+| Service Provider Entity ID | `<keycloak>/realms/d-navio` |
 | IdP Metadata | *(paste partner's XML or URL)* |
 
 After saving, Keycloak generates a **Service Provider metadata URL** that the partner must register in their IdP.
@@ -247,9 +251,9 @@ Once Keycloak is configured, provide the partner with:
 
 | Item | Value |
 |------|-------|
-| **SP Entity ID / Issuer** | `https://147.102.6.143:30443/realms/d-navio` |
-| **Redirect / Callback URI** | `https://147.102.6.143:30443/realms/d-navio/broker/partner-<name>/endpoint` |
-| **SAML metadata URL** (SAML only) | `https://147.102.6.143:30443/realms/d-navio/protocol/saml/descriptor` |
+| **SP Entity ID / Issuer** | `<keycloak>/realms/d-navio` |
+| **Redirect / Callback URI** | `<keycloak>/realms/d-navio/broker/partner-<name>/endpoint` |
+| **SAML metadata URL** (SAML only) | `<keycloak>/realms/d-navio/protocol/saml/descriptor` |
 
 The partner registers these in their Azure AD app registration, Okta application, or AD FS relying party.
 
@@ -293,4 +297,4 @@ The `access_token` is a signed JWT issued by D-NAVIO Keycloak. It can be:
 
 ---
 
-*For access requests or integration support, contact the D-NAVIO platform team.*
+*For access requests or integration support, contact the NTUA team.*

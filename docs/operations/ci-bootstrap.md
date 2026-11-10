@@ -34,8 +34,7 @@ cluster access required.
 ## Deploy Jobs
 
 Deploy jobs run on the self-hosted `dnavio-vm` runner (the kubeadm dev VM).
-They require GitHub environment secrets `KEYCLOAK_ADMIN_PASSWORD` and
-`MINIO_ROOT_PASSWORD` to be configured per environment in the GitHub repo
+They require the GitHub environment secret `KEYCLOAK_ADMIN_PASSWORD` to be configured per environment in the GitHub repo
 settings.
 
 Deployment order: `dev` → `integration` → `pilot`. Each stage gates on the
@@ -70,7 +69,6 @@ helm lint ./helm/dnavio-platform -f helm/dnavio-platform/values-dev.yaml
 helm template dnavio-platform ./helm/dnavio-platform \
   -f helm/dnavio-platform/values-dev.yaml \
   --set keycloak.adminPassword=placeholder \
-  --set minio.rootPassword=placeholder \
   | kubeconform -strict -summary -kubernetes-version 1.30.0 -
 ```
 
