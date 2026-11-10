@@ -2,7 +2,3 @@
 kafka:
   storage:
     size: 2Gi
-
-minio:
-  storage:
-    size: 5Gi

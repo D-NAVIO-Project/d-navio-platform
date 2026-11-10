@@ -37,8 +37,12 @@ jobs:
       - name: Lint chart (dev values)
         run: helm lint ./helm/dnavio-platform -f helm/dnavio-platform/values-dev.yaml
       - name: Lint chart (pilot values)
-        if: false #Currently Disabled
         run: helm lint ./helm/dnavio-platform -f helm/dnavio-platform/values-pilot.yaml
+      - name: Lint component chart (T4.2 example)
+        run: |
+          helm lint ./helm/dnavio-component \
+            -f helm/dnavio-component/examples/t42-values.yaml \
+            --set image.tag=ci
 
   kubeconform:
     name: Kubernetes schema
@@ -58,16 +62,25 @@ jobs:
           helm template dnavio-platform ./helm/dnavio-platform \
             -f helm/dnavio-platform/values-dev.yaml \
             --set keycloak.adminPassword=placeholder \
-            --set minio.rootPassword=placeholder \
             | kubeconform -strict -summary -kubernetes-version 1.30.0 -
       - name: Validate rendered chart (pilot)
-        if: false #Currently Disabled
         run: |
           helm template dnavio-platform ./helm/dnavio-platform \
             -f helm/dnavio-platform/values-pilot.yaml \
             --set keycloak.adminPassword=placeholder \
-            --set minio.rootPassword=placeholder \
             | kubeconform -strict -summary -kubernetes-version 1.30.0 -
+      - name: Validate rendered component chart (T4.2 example)
+        run: |
+          helm template t42 ./helm/dnavio-component \
+            -f helm/dnavio-component/examples/t42-values.yaml \
+            --set image.tag=ci \
+            | kubeconform -strict -summary -kubernetes-version 1.30.0 -
+      - name: Reference partner chart passes the policy check and schema
+        run: |
+          pip install --quiet pyyaml
+          helm template t42-infra ./helm/dnavio-component/examples/infra-chart > infra.yaml
+          python3 scripts/partner-policy/check_partner_chart.py t42 dnavio-dev infra.yaml
+          kubeconform -strict -summary -kubernetes-version 1.30.0 infra.yaml
       - name: Validate infra manifests (allow unknown CRDs)
         run: |
           kubeconform \
@@ -96,6 +109,7 @@ jobs:
           test -x scripts/kafka/list-topics.sh
           test -x scripts/kafka/produce-test-message.sh
           test -x scripts/kafka/consume-topic.sh
+          test -x scripts/tests/t42-integration-smoke.sh
 
   check-docs:
     name: Documentation presence
@@ -113,3 +127,4 @@ jobs:
           test -f docs/operations/ci-bootstrap.md
           test -f docs/operations/kafka-auth.md
           test -f docs/operations/rbac-access-model.md
+          test -f docs/operations/t42-integration.md

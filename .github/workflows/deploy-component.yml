@@ -1,0 +1,281 @@
+name: Deploy component
+
+# Reusable workflow, called from a partner repository after its images are
+# built with build-component.yml:
+#
+#   uses: D-NAVIO-Project/d-navio-platform/.github/workflows/deploy-component.yml@main
+#
+# Deploys up to two Helm releases into the platform namespace of the chosen
+# environment:
+#   <partner>-infra  the partner's own chart (`chart`). Rendered and checked
+#                    against the platform rules (scripts/partner-policy)
+#                    before install. Deployed first. Receives the commit's
+#                    image tag as the value `dnavio.imageTag`.
+#   <partner>        the partner's services (`values`), from helm/dnavio-component.
+# Partners have no cluster access, so on failure this workflow prints the
+# state, events and logs of the partner's pods into the run log.
+
+on:
+  workflow_call:
+    inputs:
+      partner:
+        description: Partner id, e.g. t42. Names both releases; overrides `partner` in the values file.
+        type: string
+        required: true
+      values:
+        description: Path to the partner's component values file (for helm/dnavio-component)
+        type: string
+        default: ""
+      chart:
+        description: Path to the partner's own chart directory (optional), e.g. deploy/infra
+        type: string
+        default: ""
+      chart-values:
+        description: Values file for the partner's own chart (optional)
+        type: string
+        default: ""
+      environment:
+        description: Target environment (dev or pilot)
+        type: string
+        default: dev
+      platform-ref:
+        description: Ref of d-navio-platform to take the component chart from. Keep in step with the @ref used to call this workflow.
+        type: string
+        default: main
+      timeout:
+        description: How long to wait for each release to become ready
+        type: string
+        default: 5m
+      logs:
+        description: After a successful deploy, print the recent logs of each pod (to confirm e.g. that it connected to Kafka). Public if your repository is public.
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.partner }} → ${{ inputs.environment }}
+    concurrency:
+      # One deploy per partner and environment at a time; never cancel one midway.
+      group: dnavio-component-${{ inputs.partner }}-${{ inputs.environment }}
+      cancel-in-progress: false
+    runs-on: [self-hosted, dnavio-vm]
+    timeout-minutes: 30
+    env:
+      PARTNER: ${{ inputs.partner }}
+      VALUES: ${{ inputs.values }}
+      CHART: ${{ inputs.chart }}
+      CHART_VALUES: ${{ inputs.chart-values }}
+      ENVIRONMENT: ${{ inputs.environment }}
+      PLATFORM_REF: ${{ inputs.platform-ref }}
+      TIMEOUT: ${{ inputs.timeout }}
+      TAG: ${{ github.sha }}
+    steps:
+      - name: Validate inputs
+        run: |
+          [[ "$PARTNER" =~ ^[a-z]([-a-z0-9]*[a-z0-9])?$ ]] || { echo "::error::partner '$PARTNER' must be lowercase letters, digits and hyphens"; exit 1; }
+          case "$PARTNER" in
+            library|dnavio|dnavio-platform|platform)
+              echo "::error::partner '$PARTNER' is reserved"; exit 1 ;;
+          esac
+          case "$ENVIRONMENT" in
+            dev|pilot) ;;
+            *) echo "::error::environment must be dev or pilot, not '$ENVIRONMENT'"; exit 1 ;;
+          esac
+          if [ -z "$VALUES" ] && [ -z "$CHART" ]; then
+            echo "::error::nothing to deploy — set 'values' (services), 'chart' (your own chart), or both"; exit 1
+          fi
+          for p in "$VALUES" "$CHART" "$CHART_VALUES"; do
+            case "$p" in
+              /*|*..*) echo "::error::'$p' must be a path inside the repository"; exit 1 ;;
+            esac
+          done
+          [[ "$TIMEOUT" =~ ^[0-9]+[smh]$ ]] || { echo "::error::timeout '$TIMEOUT' must look like 5m"; exit 1; }
+          {
+            echo "NAMESPACE=dnavio-${ENVIRONMENT}"
+            echo "INFRA_RELEASE=${PARTNER}-infra"
+          } >> "$GITHUB_ENV"
+
+      - name: Check out partner repository
+        uses: actions/checkout@v4
+        with:
+          path: partner
+
+      - name: Check out component chart and policy check
+        uses: actions/checkout@v4
+        with:
+          repository: D-NAVIO-Project/d-navio-platform
+          ref: ${{ inputs.platform-ref }}
+          path: platform
+          sparse-checkout: |
+            helm/dnavio-component
+            scripts/partner-policy
+
+      - name: Set kubectl context
+        run: kubectl config use-context kubernetes-admin@kubernetes
+
+      - name: Pre-flight checks
+        run: |
+          if ! helm status dnavio-platform -n "$NAMESPACE" > /dev/null 2>&1; then
+            echo "::error::the platform is not deployed in ${NAMESPACE}"; exit 1
+          fi
+          : > rendered.yaml
+
+          # Own chart: render and check against the platform rules.
+          if [ -n "$CHART" ]; then
+            [ -f "partner/${CHART}/Chart.yaml" ] || { echo "::error::no Chart.yaml in '${CHART}'"; exit 1; }
+            if grep -q '^dependencies:' "partner/${CHART}/Chart.yaml"; then
+              helm dependency build "partner/${CHART}"
+            fi
+            chart_args=()
+            if [ -n "$CHART_VALUES" ]; then
+              [ -f "partner/${CHART_VALUES}" ] || { echo "::error::chart-values file '${CHART_VALUES}' not found"; exit 1; }
+              chart_args=(-f "partner/${CHART_VALUES}")
+            fi
+            # dnavio.imageTag: the commit's image tag, so an own chart can run
+            # images built by build-component.yml (<partner>/<image>:<git sha>).
+            helm template "$INFRA_RELEASE" "partner/${CHART}" \
+              --namespace "$NAMESPACE" "${chart_args[@]}" \
+              --set-string dnavio.imageTag="$TAG" > own.yaml
+            python3 platform/scripts/partner-policy/check_partner_chart.py "$PARTNER" "$NAMESPACE" own.yaml
+            cat own.yaml >> rendered.yaml
+          fi
+
+          # Services: rendering runs every rule in the component chart.
+          if [ -n "$VALUES" ]; then
+            [ -f "partner/${VALUES}" ] || { echo "::error::values file '${VALUES}' not found in the repository"; exit 1; }
+            helm template "$PARTNER" platform/helm/dnavio-component \
+              --namespace "$NAMESPACE" \
+              -f "partner/${VALUES}" \
+              --set partner="$PARTNER" \
+              --set image.tag="$TAG" >> rendered.yaml
+          fi
+
+          # Images named <partner>/... are built by build-component.yml and
+          # imported into the VM (no registry yet): each must exist for this
+          # commit. Other images (e.g. postgres:16-alpine) are pulled.
+          # The runner user needs passwordless sudo for ctr (one sudoers rule on
+          # the VM). -n fails immediately instead of prompting for a password.
+          if ! sudo -n ctr --version > /dev/null 2>&1; then
+            user="$(id -un)"
+            ctr_path="$(readlink -f "$(command -v ctr 2>/dev/null)" 2>/dev/null || true)"
+            ctr_path="${ctr_path:-/usr/bin/ctr}"
+            echo "::error::The runner user (${user}) cannot run 'ctr' with passwordless sudo."
+            echo "Fix, once, on the VM:"
+            echo "  echo \"${user} ALL=(root) NOPASSWD: ${ctr_path}\" | sudo tee /etc/sudoers.d/${user}-ctr"
+            echo "  sudo chmod 440 /etc/sudoers.d/${user}-ctr && sudo visudo -cf /etc/sudoers.d/${user}-ctr"
+            exit 1
+          fi
+          # Capture first: `ctr ... | grep -q` under pipefail reports a found
+          # image as missing (grep exits early, ctr gets SIGPIPE).
+          runtime_images="$(sudo -n ctr -n k8s.io images ls -q)"
+          images="$(grep -E '^\s+image:' rendered.yaml | sed -E 's/^\s+image:\s*"?([^"]+)"?\s*$/\1/' | sort -u)"
+          missing=0
+          while IFS= read -r img; do
+            case "$img" in
+              "${PARTNER}"/*) ;;
+              *) continue ;;
+            esac
+            if grep -Fxq "docker.io/${img}" <<< "$runtime_images"; then
+              echo "found ${img}"
+            else
+              echo "::error::image ${img} has not been built — run build-component.yml for it first"
+              missing=1
+            fi
+          done <<< "$images"
+          exit "$missing"
+
+      - name: Unlock stuck releases
+        run: |
+          for release in "$INFRA_RELEASE" "$PARTNER"; do
+            status=$(helm status "$release" -n "$NAMESPACE" -o json 2>/dev/null \
+              | python3 -c "import sys, json; print(json.load(sys.stdin)['info']['status'])" 2>/dev/null \
+              || echo "not-found")
+            echo "${release}: ${status}"
+            case "$status" in
+              pending-install) helm uninstall "$release" -n "$NAMESPACE" ;;
+              pending-upgrade|pending-rollback) helm rollback "$release" -n "$NAMESPACE" ;;
+            esac
+          done
+
+      - name: Deploy own chart
+        if: inputs.chart != ''
+        run: |
+          chart_args=()
+          [ -n "$CHART_VALUES" ] && chart_args=(-f "partner/${CHART_VALUES}")
+          helm upgrade --install "$INFRA_RELEASE" "partner/${CHART}" \
+            --namespace "$NAMESPACE" "${chart_args[@]}" \
+            --set-string dnavio.imageTag="$TAG" \
+            --history-max 10 \
+            --wait \
+            --timeout "$TIMEOUT"
+
+      - name: Deploy services
+        if: inputs.values != ''
+        run: |
+          helm upgrade --install "$PARTNER" platform/helm/dnavio-component \
+            --namespace "$NAMESPACE" \
+            -f "partner/${VALUES}" \
+            --set partner="$PARTNER" \
+            --set image.tag="$TAG" \
+            --history-max 10 \
+            --wait \
+            --timeout "$TIMEOUT"
+
+      - name: Summary
+        if: success()
+        run: |
+          {
+            echo "### ${PARTNER} deployed to ${NAMESPACE}"
+            echo
+            echo "Revision \`${TAG:0:7}\`"
+            echo
+            echo '```'
+            kubectl get pods -n "$NAMESPACE" -o wide | awk -v p="${PARTNER}-" 'NR == 1 || index($1, p) == 1'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Pod logs
+        if: success() && inputs.logs
+        run: |
+          sleep 15   # give freshly started pods a moment to log their startup
+          for pod in $(kubectl get pods -n "$NAMESPACE" -o name | grep "^pod/${PARTNER}-" || true); do
+            echo "::group::${pod} — logs (last 50 lines)"
+            kubectl logs "$pod" -n "$NAMESPACE" --all-containers --tail=50 || true
+            echo "::endgroup::"
+          done
+
+      - name: Diagnostics (on failure)
+        if: failure()
+        run: |
+          # All of the partner's pods carry the <partner>- prefix (enforced by
+          # both the component chart and the own-chart check).
+          pods=$(kubectl get pods -n "$NAMESPACE" -o name 2>/dev/null | grep "^pod/${PARTNER}-" || true)
+          echo "::group::Pods"
+          kubectl get pods -n "$NAMESPACE" -o wide | awk -v p="${PARTNER}-" 'NR == 1 || index($1, p) == 1' || true
+          echo "::endgroup::"
+          for pod in $pods; do
+            ready=$(kubectl get "$pod" -n "$NAMESPACE" \
+              -o jsonpath='{range .status.containerStatuses[*]}{.ready}{" "}{end}' 2>/dev/null || true)
+            case "$ready" in *false*|"") ;; *) continue ;; esac
+            echo "::group::${pod} — events"
+            kubectl describe "$pod" -n "$NAMESPACE" | sed -n '/^Events:/,$p' || true
+            echo "::endgroup::"
+            echo "::group::${pod} — logs (last 100 lines)"
+            kubectl logs "$pod" -n "$NAMESPACE" --all-containers --tail=100 || true
+            echo "::endgroup::"
+            restarts=$(kubectl get "$pod" -n "$NAMESPACE" \
+              -o jsonpath='{.status.containerStatuses[0].restartCount}' 2>/dev/null || true)
+            if [ "${restarts:-0}" -gt 0 ]; then
+              echo "::group::${pod} — logs before the last restart"
+              kubectl logs "$pod" -n "$NAMESPACE" --all-containers --previous --tail=100 || true
+              echo "::endgroup::"
+            fi
+          done
+          echo "::error::Deploy of ${PARTNER} to ${NAMESPACE} failed — expand the groups above for pod events and logs"

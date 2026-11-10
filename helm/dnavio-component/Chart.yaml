@@ -1,0 +1,8 @@
+apiVersion: v2
+name: dnavio-component
+description: Runs a partner's components on the D-NAVIO platform from a single values file
+type: application
+version: 0.1.0
+keywords:
+  - d-navio
+  - partner

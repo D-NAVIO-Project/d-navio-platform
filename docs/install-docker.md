@@ -45,7 +45,6 @@ Expected containers:
 
 - dnavio-kafka
 - dnavio-keycloak
-- dnavio-minio
 
 ## Access Services
 
@@ -70,27 +69,6 @@ username: admin
 password: adminadmin
 ```
 
-### MinIO
-API:
-
-```text
-http://localhost:9000
-```
-
-Console:
-
-```text
-http://localhost:9001
-```
-
-Default development credentials:
-
-```text
-username: admin
-password: adminadmin
-```
-
-
 ## Validation
 
 After starting the stack, verify the following services.
@@ -101,21 +79,6 @@ Open:
 
 ```text
 http://localhost:8080
-```
-
-Log in with:
-
-```text
-username: admin
-password: adminadmin
-```
-
-### MinIO Validation
-
-Open:
-
-```text
-http://localhost:9001
 ```
 
 Log in with:

@@ -17,6 +17,7 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: [self-hosted, dnavio-vm]
     environment: dev
+
     steps:
       - uses: actions/checkout@v4
 
@@ -27,9 +28,6 @@ jobs:
         run: |
           NS=dnavio-dev
           RELEASE=dnavio-platform
-          # Only on first install: remove kompose-generated resources whose selectors
-          # and PVC specs conflict with what Helm expects. After a successful Helm
-          # install these resources are Helm-managed and this block is skipped.
           if ! helm status "$RELEASE" -n "$NS" > /dev/null 2>&1; then
             echo "No Helm release found — removing manually-applied resources before install"
             kubectl delete deployment kafka keycloak minio \
@@ -38,10 +36,22 @@ jobs:
               -n "$NS" --ignore-not-found --timeout=90s || true
           fi
 
+      - name: Unlock stuck Helm release
+        run: |
+          NS=dnavio-dev
+          RELEASE=dnavio-platform
+          STATUS=$(helm status "$RELEASE" -n "$NS" -o json 2>/dev/null \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['info']['status'])" 2>/dev/null || echo "not-found")
+          echo "Helm release status: $STATUS"
+          if [[ "$STATUS" == "pending-install" ]]; then
+            helm uninstall "$RELEASE" -n "$NS" || true
+          elif [[ "$STATUS" == "pending-upgrade" || "$STATUS" == "pending-rollback" ]]; then
+            helm rollback "$RELEASE" -n "$NS" || true
+          fi
+
       - name: Deploy to dnavio-dev
         env:
           KEYCLOAK_PASS: ${{ secrets.KEYCLOAK_ADMIN_PASSWORD }}
-          MINIO_PASS: ${{ secrets.MINIO_ROOT_PASSWORD }}
           DNAVIO_API_SECRET: ${{ secrets.DNAVIO_API_CLIENT_SECRET }}
         run: |
           tmp=$(mktemp /tmp/secrets-XXXXXX.yaml)
@@ -53,26 +63,23 @@ jobs:
           print('  clients:')
           print('    dnavioApi:')
           print('      secret: ' + json.dumps(os.environ['DNAVIO_API_SECRET']))
-          print('minio:')
-          print('  rootPassword: ' + json.dumps(os.environ['MINIO_PASS']))
           " > "$tmp"
           helm upgrade --install dnavio-platform ./helm/dnavio-platform \
             --namespace dnavio-dev \
             --create-namespace \
             -f helm/dnavio-platform/values-dev.yaml \
             -f "$tmp" \
-            --wait \
-            --timeout 10m \
-            --atomic
-
+            --timeout 15m
+          kubectl rollout status deployment/keycloak -n dnavio-dev --timeout=5m
+          kubectl rollout status deployment/kafka -n dnavio-dev --timeout=10m
 
   deploy-pilot:
     name: Deploy → pilot
     needs: deploy-dev
-    if: false #Currently Disabled
-    # if: ${{ needs.deploy-dev.result == 'success' }}
+    if: ${{ needs.deploy-dev.result == 'success' }}
     runs-on: [self-hosted, dnavio-vm]
     environment: pilot
+
     steps:
       - uses: actions/checkout@v4
 
@@ -91,10 +98,22 @@ jobs:
               -n "$NS" --ignore-not-found --timeout=90s || true
           fi
 
+      - name: Unlock stuck Helm release
+        run: |
+          NS=dnavio-pilot
+          RELEASE=dnavio-platform
+          STATUS=$(helm status "$RELEASE" -n "$NS" -o json 2>/dev/null \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['info']['status'])" 2>/dev/null || echo "not-found")
+          echo "Helm release status: $STATUS"
+          if [[ "$STATUS" == "pending-install" ]]; then
+            helm uninstall "$RELEASE" -n "$NS" || true
+          elif [[ "$STATUS" == "pending-upgrade" || "$STATUS" == "pending-rollback" ]]; then
+            helm rollback "$RELEASE" -n "$NS" || true
+          fi
+
       - name: Deploy to dnavio-pilot
         env:
           KEYCLOAK_PASS: ${{ secrets.KEYCLOAK_ADMIN_PASSWORD }}
-          MINIO_PASS: ${{ secrets.MINIO_ROOT_PASSWORD }}
           DNAVIO_API_SECRET: ${{ secrets.DNAVIO_API_CLIENT_SECRET }}
         run: |
           tmp=$(mktemp /tmp/secrets-XXXXXX.yaml)
@@ -106,14 +125,12 @@ jobs:
           print('  clients:')
           print('    dnavioApi:')
           print('      secret: ' + json.dumps(os.environ['DNAVIO_API_SECRET']))
-          print('minio:')
-          print('  rootPassword: ' + json.dumps(os.environ['MINIO_PASS']))
           " > "$tmp"
           helm upgrade --install dnavio-platform ./helm/dnavio-platform \
             --namespace dnavio-pilot \
             --create-namespace \
             -f helm/dnavio-platform/values-pilot.yaml \
             -f "$tmp" \
-            --wait \
-            --timeout 10m \
-            --atomic
+            --timeout 15m
+          kubectl rollout status deployment/keycloak -n dnavio-pilot --timeout=5m
+          kubectl rollout status deployment/kafka -n dnavio-pilot --timeout=10m

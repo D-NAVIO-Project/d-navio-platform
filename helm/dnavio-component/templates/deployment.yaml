@@ -1,0 +1,105 @@
+{{- include "dnavio-component.validate" . }}
+{{- range $c := .Values.components }}
+{{- $ctx := dict "root" $ "c" $c }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "dnavio-component.fullname" $ctx }}
+  labels:
+    {{- include "dnavio-component.labels" $ctx | nindent 4 }}
+spec:
+  replicas: {{ $c.replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "dnavio-component.selectorLabels" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "dnavio-component.labels" $ctx | nindent 8 }}
+    spec:
+      enableServiceLinks: false
+      {{- with $.Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      containers:
+        - name: {{ $c.name }}
+          image: "{{ with $.Values.image.registry }}{{ . }}/{{ end }}{{ $c.image }}:{{ $.Values.image.tag }}"
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          {{- with $c.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $c.args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if $c.port }}
+          ports:
+            - name: http
+              containerPort: {{ $c.port }}
+              protocol: TCP
+          {{- end }}
+          {{- if or $c.env $c.secretEnv }}
+          env:
+            {{- range $k, $v := $c.env }}
+            - name: {{ $k }}
+              value: {{ $v | toString | quote }}
+            {{- end }}
+            {{- range $k, $ref := $c.secretEnv }}
+            {{- $parts := splitList "/" (toString $ref) }}
+            - name: {{ $k }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "dnavio-component.secretName" (dict "root" $ "alias" (index $parts 0)) }}
+                  key: {{ index $parts 1 }}
+            {{- end }}
+          {{- end }}
+          resources:
+            requests:
+              memory: {{ $c.memory }}
+              {{- with $c.cpu }}
+              cpu: {{ . }}
+              {{- end }}
+            limits:
+              memory: {{ $c.memory }}
+          securityContext:
+            allowPrivilegeEscalation: false
+          {{- if $c.port }}
+          {{- $ready := $c.health }}
+          {{- $live := $c.health }}
+          {{- if kindIs "map" $c.health }}
+          {{- $ready = $c.health.readiness }}
+          {{- $live = $c.health.liveness }}
+          {{- end }}
+          readinessProbe:
+            httpGet:
+              path: {{ $ready }}
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: {{ $live }}
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          {{- else }}
+          readinessProbe:
+            exec:
+              command:
+                {{- toYaml $c.healthCommand | nindent 16 }}
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command:
+                {{- toYaml $c.healthCommand | nindent 16 }}
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          {{- end }}
+{{- end }}

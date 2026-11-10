@@ -1,0 +1,97 @@
+{{- $partner := include "infra.partner" . }}
+{{- $initScripts := .Files.Glob "initdb/*" }}
+apiVersion: v1
+kind: Service
+metadata:
+  # Reachable by your services as <partner>-postgres:5432
+  name: {{ $partner }}-postgres
+spec:
+  type: ClusterIP
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+  selector:
+    app: {{ $partner }}-postgres
+---
+{{- if $initScripts }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $partner }}-postgres-init
+data:
+  {{- ($initScripts).AsConfig | nindent 2 }}
+---
+{{- end }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $partner }}-postgres
+spec:
+  replicas: 1
+  serviceName: {{ $partner }}-postgres
+  selector:
+    matchLabels:
+      app: {{ $partner }}-postgres
+  template:
+    metadata:
+      labels:
+        app: {{ $partner }}-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: {{ .Values.postgres.image }}
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: {{ .Values.postgres.username | quote }}
+            - name: POSTGRES_DB
+              value: {{ .Values.postgres.database | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $partner }}-secrets
+                  key: postgres-password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"']
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"']
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            failureThreshold: 6
+          resources:
+            requests:
+              memory: {{ .Values.postgres.memory }}
+            limits:
+              memory: {{ .Values.postgres.memory }}
+          securityContext:
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            {{- if $initScripts }}
+            # Files in initdb/ run once, when the data volume is first created.
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+            {{- end }}
+      {{- if $initScripts }}
+      volumes:
+        - name: init
+          configMap:
+            name: {{ $partner }}-postgres-init
+      {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.postgres.storage }}

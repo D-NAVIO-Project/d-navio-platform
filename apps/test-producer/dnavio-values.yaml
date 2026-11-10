@@ -1,0 +1,19 @@
+# NTUA's reference component, deployed the way partners deploy theirs:
+# helm/dnavio-component + .github/workflows/test-producer.yml.
+# Resources are named ntua-<component>; the release is "ntua".
+partner: ntua
+
+components:
+  - name: test-producer
+    image: ntua/test-producer
+    port: 8000
+    health: /health
+    memory: 256Mi
+    env:
+      KAFKA_BOOTSTRAP: kafka:9092
+      KAFKA_TOPIC: dnavio.dml.telemetry.raw
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: d-navio
+    secretEnv:
+      KEYCLOAK_CLIENT_ID: credentials/svc-test-producer-client-id
+      KEYCLOAK_CLIENT_SECRET: credentials/svc-test-producer-client-secret
