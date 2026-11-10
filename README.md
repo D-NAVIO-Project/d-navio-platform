@@ -24,10 +24,6 @@ The initial platform stack includes:
 - **Kafka** (KRaft mode) — asynchronous event backbone and message broker
 - **Keycloak** — authentication and identity management
 
-> MinIO appeared in the initial example as a placeholder for object storage. It
-> is not part of the platform; the chart and Compose files still deploy it until
-> it is removed.
-
 ## Architecture Principles
 
 D-NAVIO uses Kafka as the event backbone for live events and async
@@ -133,14 +129,11 @@ Services are ClusterIP — access them with `kubectl port-forward`:
 
 ```bash
 kubectl port-forward svc/keycloak 18080:8080 -n dnavio-dev
-kubectl port-forward svc/minio 19000:9000 19001:9001 -n dnavio-dev
 ```
 
 | Service       | Forwarded endpoint           |
 |---------------|------------------------------|
 | Keycloak      | `http://localhost:18080`     |
-| MinIO Console | `http://localhost:19001`     |
-| MinIO API     | `http://localhost:19000`     |
 
 ### Docker Compose
 
@@ -148,8 +141,6 @@ kubectl port-forward svc/minio 19000:9000 19001:9001 -n dnavio-dev
 |---------------|-------------------------|
 | Kafka broker  | `localhost:9092`        |
 | Keycloak      | `http://localhost:8080` |
-| MinIO API     | `http://localhost:9000` |
-| MinIO Console | `http://localhost:9001` |
 
 Default development credentials: `admin / adminadmin`
 
@@ -175,9 +166,6 @@ d-navio/
     ├── kafka-data-persistentvolumeclaim.yaml
     ├── keycloak-deployment.yaml
     ├── keycloak-service.yaml
-    ├── minio-deployment.yaml
-    ├── minio-service.yaml
-    └── minio-data-persistentvolumeclaim.yaml
 └── scripts/
     └── kafka/
         ├── create-topics.sh

@@ -216,8 +216,7 @@ PostgreSQL with a stable generated password and puts the connection string in
 - **History beyond topic retention** (telemetry topics keep 7 days) comes from
   T4.2, which already implements replay windows and exports in its query
   service — to be agreed with T4.2 as the platform's history interface.
-- The platform offers no object storage. MinIO appeared in the initial example
-  as a placeholder and will be removed from the platform chart.
+- The platform offers no object storage.
 
 ## 3. Onboarding by request
 
@@ -277,8 +276,8 @@ trusted, or needs a hard memory cap.
 
 | | Memory requests | Memory limits |
 |---|---|---|
-| Platform (Kafka, Keycloak; MinIO until it is removed), per environment | 0.9 GiB | 1.6 GiB |
-| Platform, dev + pilot | 1.8 GiB | 3.3 GiB |
+| Platform (Kafka, Keycloak), per environment | 0.75 GiB | 1.4 GiB |
+| Platform, dev + pilot | 1.5 GiB | 2.8 GiB |
 | VM total | 11 GiB | |
 
 T4.2's datastores come out of T4.2's budget. For reference, T4.2 reports

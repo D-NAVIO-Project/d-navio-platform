@@ -85,7 +85,7 @@ printf 'T4.2 integration smoke test — namespace %s, run %s\n' "$NS" "$RUN_ID"
 
 # ---------------------------------------------------------------------------
 section "Deployments ready"
-for d in keycloak kafka minio; do
+for d in keycloak kafka; do
   if kubectl rollout status "deployment/$d" -n "$NS" --timeout=120s >/dev/null 2>&1; then
     pass "$d rolled out and ready"
   else
@@ -103,7 +103,7 @@ for j in keycloak-realm-bootstrap kafka-topics-init kafka-acls-init; do
 done
 
 section "Memory limits"
-for d in keycloak kafka minio; do
+for d in keycloak kafka; do
   lim="$(kubectl get deploy "$d" -n "$NS" \
     -o jsonpath='{.spec.template.spec.containers[0].resources.limits.memory}' 2>/dev/null)"
   if [ -n "$lim" ]; then pass "$d limited to $lim"; else fail "$d has no memory limit"; fi

@@ -139,13 +139,3 @@ keycloak:
     dnavioApi:
       clientId: dnavio-api
       secret: ""
-
-minio:
-  image:
-    repository: minio/minio
-    tag: "RELEASE.2024-11-07T00-52-20Z"
-  rootUser: admin
-  # Set via --set minio.rootPassword=... in CI. Never commit a real value here.
-  rootPassword: ""
-  storage:
-    size: 10Gi

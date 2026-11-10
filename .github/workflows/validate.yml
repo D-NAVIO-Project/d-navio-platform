@@ -62,14 +62,12 @@ jobs:
           helm template dnavio-platform ./helm/dnavio-platform \
             -f helm/dnavio-platform/values-dev.yaml \
             --set keycloak.adminPassword=placeholder \
-            --set minio.rootPassword=placeholder \
             | kubeconform -strict -summary -kubernetes-version 1.30.0 -
       - name: Validate rendered chart (pilot)
         run: |
           helm template dnavio-platform ./helm/dnavio-platform \
             -f helm/dnavio-platform/values-pilot.yaml \
             --set keycloak.adminPassword=placeholder \
-            --set minio.rootPassword=placeholder \
             | kubeconform -strict -summary -kubernetes-version 1.30.0 -
       - name: Validate rendered component chart (T4.2 example)
         run: |

@@ -62,7 +62,7 @@ producing a broken or unsafe workload.
 {{- /* Platform services: components use the platform's instead of their own.
        Datastores: partners run their own, but with their own chart — this
        chart runs stateless services only (no volumes). */ -}}
-{{- $platformImages := list "kafka" "cp-kafka" "cp-server" "redpanda" "zookeeper" "keycloak" "minio" -}}
+{{- $platformImages := list "kafka" "cp-kafka" "cp-server" "redpanda" "zookeeper" "keycloak" -}}
 {{- $datastoreImages := list "postgres" "postgresql" "mongo" "mongodb" "mysql" "mariadb" "redis" -}}
 {{- $credentialLike := "(?i)(password|passwd|secret|token|api_?key|private_?key)" -}}
 {{- $seen := dict -}}
@@ -88,7 +88,7 @@ producing a broken or unsafe workload.
 {{- end -}}
 {{- $base := last (splitList "/" $image) -}}
 {{- if has $base $platformImages -}}
-{{- fail (printf "components.%s: image %q is a platform service — use the platform's broker, Keycloak and MinIO instead of deploying your own" $name $image) -}}
+{{- fail (printf "components.%s: image %q is a platform service — use the platform's broker and Keycloak instead of deploying your own" $name $image) -}}
 {{- end -}}
 {{- if has $base $datastoreImages -}}
 {{- fail (printf "components.%s: image %q is a datastore — run it with your own chart (this chart has no volumes) and pass its connection string through Secret %s-secrets" $name $image $partner) -}}

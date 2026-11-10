@@ -51,8 +51,7 @@ components:
 The chart refuses to render, with a message naming the component and field,
 when a values file:
 
-- deploys a platform service (an image named `kafka`, `redpanda`, `keycloak`,
-  `minio`, …) — use the platform's instead
+- deploys a platform service (an image named `kafka`, `redpanda`, `keycloak`, …) — use the platform's instead
 - deploys a datastore (`postgres`, `mongo`, `redis`, …) — partners run their
   own datastores, but with their own chart, since this one has no volumes
 - omits `memory`, or a health check

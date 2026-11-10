@@ -52,7 +52,6 @@ jobs:
       - name: Deploy to dnavio-dev
         env:
           KEYCLOAK_PASS: ${{ secrets.KEYCLOAK_ADMIN_PASSWORD }}
-          MINIO_PASS: ${{ secrets.MINIO_ROOT_PASSWORD }}
           DNAVIO_API_SECRET: ${{ secrets.DNAVIO_API_CLIENT_SECRET }}
         run: |
           tmp=$(mktemp /tmp/secrets-XXXXXX.yaml)
@@ -64,8 +63,6 @@ jobs:
           print('  clients:')
           print('    dnavioApi:')
           print('      secret: ' + json.dumps(os.environ['DNAVIO_API_SECRET']))
-          print('minio:')
-          print('  rootPassword: ' + json.dumps(os.environ['MINIO_PASS']))
           " > "$tmp"
           helm upgrade --install dnavio-platform ./helm/dnavio-platform \
             --namespace dnavio-dev \
@@ -74,7 +71,6 @@ jobs:
             -f "$tmp" \
             --timeout 15m
           kubectl rollout status deployment/keycloak -n dnavio-dev --timeout=5m
-          kubectl rollout status deployment/minio -n dnavio-dev --timeout=3m
           kubectl rollout status deployment/kafka -n dnavio-dev --timeout=10m
 
   deploy-pilot:
@@ -118,7 +114,6 @@ jobs:
       - name: Deploy to dnavio-pilot
         env:
           KEYCLOAK_PASS: ${{ secrets.KEYCLOAK_ADMIN_PASSWORD }}
-          MINIO_PASS: ${{ secrets.MINIO_ROOT_PASSWORD }}
           DNAVIO_API_SECRET: ${{ secrets.DNAVIO_API_CLIENT_SECRET }}
         run: |
           tmp=$(mktemp /tmp/secrets-XXXXXX.yaml)
@@ -130,8 +125,6 @@ jobs:
           print('  clients:')
           print('    dnavioApi:')
           print('      secret: ' + json.dumps(os.environ['DNAVIO_API_SECRET']))
-          print('minio:')
-          print('  rootPassword: ' + json.dumps(os.environ['MINIO_PASS']))
           " > "$tmp"
           helm upgrade --install dnavio-platform ./helm/dnavio-platform \
             --namespace dnavio-pilot \
@@ -140,5 +133,4 @@ jobs:
             -f "$tmp" \
             --timeout 15m
           kubectl rollout status deployment/keycloak -n dnavio-pilot --timeout=5m
-          kubectl rollout status deployment/minio -n dnavio-pilot --timeout=3m
           kubectl rollout status deployment/kafka -n dnavio-pilot --timeout=10m

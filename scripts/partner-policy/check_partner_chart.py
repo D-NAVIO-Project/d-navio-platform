@@ -25,7 +25,7 @@ ALLOWED_KINDS = {
     "Service", "ConfigMap", "Secret", "PersistentVolumeClaim",
 }
 # Platform services: use the platform's, never your own.
-PLATFORM_IMAGES = {"kafka", "cp-kafka", "cp-server", "redpanda", "zookeeper", "keycloak", "minio"}
+PLATFORM_IMAGES = {"kafka", "cp-kafka", "cp-server", "redpanda", "zookeeper", "keycloak"}
 CREDENTIAL_LIKE = re.compile(r"(?i)(password|passwd|secret|token|api_?key|private_?key)")
 # Names like KAFKA_TOKEN_URL are locations, not secrets.
 LOCATION_NAME = re.compile(r"(?i)_(URL|URI|ENDPOINT|PATH|FILE)$")

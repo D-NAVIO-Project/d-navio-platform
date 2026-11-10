@@ -16,9 +16,6 @@ Data stores are not platform services. Each component runs the stores it owns
 (T4.2's Data Management Layer runs PostgreSQL and MongoDB), and other components
 receive that data through Kafka topics or the owner's APIs.
 
-> MinIO appeared in the initial example as a placeholder for object storage. It
-> is not part of the platform; the chart still deploys it until it is removed.
-
 ## High-Level Architecture
 
 ```text
