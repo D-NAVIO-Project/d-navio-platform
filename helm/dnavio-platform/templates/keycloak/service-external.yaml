@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak-external
+  labels:
+    {{- include "dnavio-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: keycloak
+spec:
+  # The only way into Keycloak from outside the cluster: HTTPS, through the
+  # gateway container, which keeps the admin console to the allowed source
+  # ranges (templates/keycloak/gateway-configmap.yaml). There is no plain-HTTP
+  # port outside the cluster.
+  type: NodePort
+  # Keep the caller's source address, so the gateway can tell who is asking.
+  externalTrafficPolicy: Local
+  ports:
+    - name: https
+      port: 8443
+      targetPort: gateway
+      protocol: TCP
+      nodePort: {{ .Values.keycloak.service.httpsNodePort }}
+  selector:
+    {{- include "dnavio-platform.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: keycloak

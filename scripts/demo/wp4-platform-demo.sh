@@ -13,7 +13,7 @@
 #
 # Usage: scripts/demo/wp4-platform-demo.sh [namespace]      (default dnavio-dev)
 #   DEMO_CLIENT=svc-...   identity of the demo component (default svc-test-producer)
-#   KC_URL=...            Keycloak as seen from the VM (default http://127.0.0.1:30080)
+#   KC_URL=...            Keycloak as seen from the VM (default: its in-cluster address)
 #   NO_PAUSE=1            run straight through, e.g. to record a fallback video
 
 set -uo pipefail
@@ -21,7 +21,9 @@ set -uo pipefail
 NS="${1:-dnavio-dev}"
 REALM="${REALM:-d-navio}"
 CLIENT="${DEMO_CLIENT:-svc-test-producer}"
-KC_URL="${KC_URL:-http://127.0.0.1:30080}"
+# Keycloak has no plain-HTTP port outside the cluster; the VM reaches its
+# in-cluster address directly.
+KC_URL="${KC_URL:-http://$(kubectl get svc keycloak -n "$NS" -o jsonpath='{.spec.clusterIP}' 2>/dev/null):8080}"
 LIVE_TOPIC="${LIVE_TOPIC:-dnavio.dml.telemetry.normalized}"
 FALLBACK_TOPIC="${FALLBACK_TOPIC:-dnavio.frs.failures.reported}"
 DENIED_TOPIC="dnavio.ops.admin-audit"

@@ -3,7 +3,6 @@
 keycloak:
   hostname: "https://147.102.6.143:32443"
   service:
-    nodePort: 32080
     httpsNodePort: 32443
 
 kafka:

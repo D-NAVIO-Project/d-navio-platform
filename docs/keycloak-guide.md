@@ -33,9 +33,10 @@ value, so issuer and expected-issuer can never drift.
 
 ## TLS
 
-Keycloak serves both HTTP (`8080`, NodePort `30080`) and HTTPS (`8443`, NodePort
-`30443`). The pinned hostname uses **HTTPS**, so all external/partner traffic —
-where client secrets are POSTed — is encrypted.
+From outside the cluster, Keycloak is reachable only over **HTTPS** (NodePort
+`30443`, Service `keycloak-external`), so all external/partner traffic — where
+client secrets are POSTed — is encrypted. There is no plain-HTTP port outside
+the cluster. Inside the cluster, Keycloak serves HTTP on `keycloak:8080`.
 
 The server certificate comes from the `dnavio-tls` Kubernetes Secret, generated
 per-namespace by `scripts/tls/generate-dev-cert.sh` (a **self-signed dev CA**,
@@ -61,13 +62,24 @@ hardening step.)
 | Context | URL |
 |---------|-----|
 | In-cluster (backchannel) | `http://keycloak:8080` |
-| External / admin console | `https://147.102.6.143:30443` (HTTP `:30080` also open) |
+| External | `https://147.102.6.143:30443` |
+| Admin console | `https://147.102.6.143:30443`, from the NTUA VPN only |
 | Token endpoint | `https://147.102.6.143:30443/realms/d-navio/protocol/openid-connect/token` |
 | Issuer (`iss`) | `https://147.102.6.143:30443/realms/d-navio` |
 
 ## Admin Console
 
-Open `https://147.102.6.143:30443` and log in with the admin credentials from the
+The admin console and the `master` realm are reachable only from the source
+ranges in `keycloak.gateway.adminAllowedCIDRs` (the NTUA VPN). A gateway
+container (nginx) in the Keycloak pod enforces this for all traffic from
+outside the cluster; from any other address these pages answer `403`. The
+platform realm's endpoints (tokens, login pages) stay open to everyone. To
+change who may reach the console, edit the list and redeploy the platform.
+
+Locked out? The admin CLI still works from the VM, inside the pod:
+`kubectl exec -n dnavio-dev deploy/keycloak -c keycloak -- /opt/keycloak/bin/kcadm.sh ...`.
+
+Connect to the VPN, open `https://147.102.6.143:30443` and log in with the admin credentials from the
 `keycloak-credentials` Secret (username `admin`). The self-signed dev cert will
 trigger a browser warning — expected. The "temporary admin user" banner is also
 expected; creating a permanent admin account is a hardening follow-up.

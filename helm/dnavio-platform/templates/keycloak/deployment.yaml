@@ -19,9 +19,41 @@ spec:
       labels:
         {{- include "dnavio-platform.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: keycloak
+      annotations:
+        # kubectl exec/logs without -c keep addressing Keycloak, not the gateway.
+        kubectl.kubernetes.io/default-container: keycloak
+        # Restart the pod when the gateway's rules change.
+        checksum/gateway: {{ include (print $.Template.BasePath "/keycloak/gateway-configmap.yaml") . | sha256sum }}
     spec:
       restartPolicy: Always
       containers:
+        # Gateway for traffic from outside the cluster (Service
+        # keycloak-external): limits the admin console to allowed source ranges.
+        - name: gateway
+          image: "{{ .Values.keycloak.gateway.image.repository }}:{{ .Values.keycloak.gateway.image.tag }}"
+          ports:
+            - name: gateway
+              containerPort: 9443
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: gateway
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "16Mi"
+              cpu: "10m"
+            limits:
+              memory: "48Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: gateway-config
+              mountPath: /etc/nginx/conf.d
+              readOnly: true
+            - name: dnavio-tls
+              mountPath: /etc/dnavio-tls
+              readOnly: true
         - name: keycloak
           image: "{{ .Values.keycloak.image.repository }}:{{ .Values.keycloak.image.tag }}"
           args:
@@ -73,6 +105,9 @@ spec:
               mountPath: /etc/dnavio-tls
               readOnly: true
       volumes:
+        - name: gateway-config
+          configMap:
+            name: keycloak-gateway
         - name: keycloak-data
           persistentVolumeClaim:
             claimName: keycloak-data
