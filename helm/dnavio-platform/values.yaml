@@ -115,7 +115,8 @@ keycloak:
       repository: nginxinc/nginx-unprivileged
       tag: "1.27-alpine"
     adminAllowedCIDRs:
-      - 147.102.224.0/24
+      - 147.102.6.0/24        # NTUA range
+      - 147.102.224.140/32    # single admin address
   # Persist the H2 database so the realm + clients survive pod restarts.
   storage:
     size: 1Gi
