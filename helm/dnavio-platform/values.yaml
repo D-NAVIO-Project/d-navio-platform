@@ -133,13 +133,85 @@ keycloak:
   # In-cluster components (T4.2 DML/FRS) mount it instead of an operator
   # fetching secrets by hand. Set `secret` to override (e.g. from CI).
   # Clients not listed here keep a Keycloak-generated secret.
+  # `description` says who owns the identity; it is shown in the admin console.
   componentClients:
     - clientId: svc-dml   # T4.2 ingest-api, stream-processor
+      description: "DML - Data Management Layer (TUBS)"
       secret: ""
     - clientId: svc-frs   # T4.2 frs-api, frs-derive, hydra-packager
+      description: "FRS - Failure Reporting System (TUBS)"
       secret: ""
     - clientId: svc-test-producer   # NTUA reference component (apps/test-producer)
+      description: "Platform reference component and demo (NTUA)"
       secret: ""
+  # Roles for people (D4.1 FR-AUTH-02), created in the platform realm. They say
+  # what a person may do, whatever their organisation. User interfaces enforce
+  # them; nothing on the message broker depends on them. `data-steward` comes
+  # from the DML specification (data quality panel).
+  realmRoles:
+    - name: operator
+      description: "Monitor vessels and alerts; acknowledge, mitigate or close failure records; request a risk reassessment; accept or reject recommendations"
+    - name: analyst
+      description: "Search and review failure reports, risk evidence and audit status"
+    - name: integrator
+      description: "Manage components and their promotion between environments"
+    - name: admin
+      description: "Administer users and roles; platform health and governance"
+    - name: data-steward
+      description: "Review data quality: accepted, rejected and dead-lettered records"
+  # Organisations: one per partner or pilot company. People join by invitation
+  # from the admin console (no personal data in this repository).
+  #   type     partner | pilot
+  #   vessels  the vessels its members may see; "*" = all. It reaches the token
+  #            (scope `organization`) for user interfaces to enforce.
+  #   domains  optional email domains, e.g. [example.org]. Keycloak requires
+  #            one; if none is given a reserved placeholder is used.
+  organizations:
+    - alias: ntua
+      name: NTUA
+      description: "National Technical University of Athens - platform, HYDRA"
+      type: partner
+      vessels: ["*"]
+    - alias: tubs
+      name: TUBS
+      description: "TU Braunschweig - DML, FRS, CST"
+      type: partner
+      vessels: ["*"]
+    - alias: uth
+      name: UTH
+      description: "University of Thessaly - DSS, IRA"
+      type: partner
+      vessels: ["*"]
+    - alias: mag
+      name: MAG
+      description: "Maggioli - DYNAMO"
+      type: partner
+      vessels: ["*"]
+    - alias: cat
+      name: CAT
+      description: "IRA"
+      type: partner
+      vessels: ["*"]
+    - alias: diamatix
+      name: DIAMATIX
+      description: "IRA"
+      type: partner
+      vessels: ["*"]
+    - alias: metis
+      name: METIS
+      description: "Live pilot data feed"
+      type: partner
+      vessels: ["*"]
+    - alias: danaos
+      name: DANAOS
+      description: "Pilot"
+      type: pilot
+      vessels: ["DN-CNT-001", "DN-CNT-002"]
+    - alias: columbia
+      name: COLUMBIA
+      description: "Pilot"
+      type: pilot
+      vessels: ["CB-PAX-001"]
   clients:
     # Confidential client used by D-NAVIO services and the Kafka scripts/Job to
     # obtain tokens (client credentials grant). The realm-bootstrap Job reconciles

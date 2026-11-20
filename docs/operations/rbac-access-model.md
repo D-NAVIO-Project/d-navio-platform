@@ -64,11 +64,54 @@ once those exist — defined here so the model is stable.
 | `analyst` | View/search incidents & failure reports, deeper analysis | FR-INC-01/02 |
 | `integrator` | Request promotions Dev→Test→Operational, manage templates/components | FR-PLM-01, AP11 |
 | `admin` | User/role administration, platform health, governance exports | FR-OBS-01, FR-GOV-02 |
+| `data-steward` | Review data quality: accepted, rejected and dead-lettered records | DML specification (data quality panel) |
+
+The roles and their descriptions are defined in `keycloak.realmRoles`
+(`helm/dnavio-platform/values.yaml`). Roles used by one component only (for
+example HYDRA's modellers) are defined on that component's own client, not here.
 
 Roles are additive; a user may hold several. `admin` is not a Keycloak realm-admin —
 it is a platform role within the `d-navio` realm. Human roles are **never** used as
 Kafka client principals; machine access to Kafka is always via a `svc-*` service
 account.
+
+### 3. Organisations
+
+Every person belongs to an organisation: a consortium partner or a pilot
+company. Organisations use Keycloak's Organizations feature and are defined in
+`keycloak.organizations` (`helm/dnavio-platform/values.yaml`); the bootstrap Job
+creates and reconciles them on every deploy.
+
+| Organisation | Type | Vessels its members may see |
+|--------------|------|-----------------------------|
+| NTUA, TUBS, UTH, MAG, CAT, DIAMATIX, METIS | `partner` | all (`*`) |
+| DANAOS | `pilot` | `DN-CNT-001`, `DN-CNT-002` |
+| COLUMBIA | `pilot` | `CB-PAX-001` |
+
+A role says **what** a person may do; the organisation says **whose data** they
+may see. Both reach the token, and the user interface enforces them:
+
+```json
+{
+  "preferred_username": "jane.doe",
+  "realm_access": { "roles": ["operator"] },
+  "organization": {
+    "danaos": { "id": "…", "type": ["pilot"], "vessels": ["DN-CNT-001", "DN-CNT-002"] }
+  }
+}
+```
+
+The `organization` claim is present when the client requests the scope
+`organization` (an optional client scope of the realm).
+
+People are **not** defined in this repository. An administrator invites them
+from the admin console (Organizations → the organisation → Members → Invite
+member) and assigns their roles there. Email domains are optional
+(`domains:`); Keycloak requires one per organisation, so a reserved placeholder
+(`<alias>.d-navio.invalid`) is used until a real one is set.
+
+Service accounts (`svc-*`) are not members of organisations; their owner is
+recorded in the client's description.
 
 ## Connection Access Coverage
 
@@ -152,9 +195,11 @@ apis_exposed:                  # optional, for future API-level RBAC
 
 ## Realisation in Keycloak
 
-- Service-account clients (`svc-dml`, `svc-frs`, `svc-dynamo`) and realm roles
-  (`operator`, `analyst`, `integrator`, `admin`) are created idempotently by the
-  `keycloak-realm-bootstrap` Job, alongside the existing `dnavio-api` client.
+- Service-account clients (`svc-dml`, `svc-frs`, `svc-dynamo`), realm roles
+  (`operator`, `analyst`, `integrator`, `admin`, `data-steward`) and
+  organisations are created idempotently by the `keycloak-realm-bootstrap` Job,
+  alongside the existing `dnavio-api` client. A failure in the organisation
+  step is logged as a warning and does not fail the deploy.
 - Client secrets come from the `keycloak-client-secrets` Secret (injected at
   deploy time, never committed) — same pattern as `dnavio-api`.
 - Human role→user assignment is manual (or via future user-federation) until the

@@ -105,6 +105,10 @@ spec:
                 if [ -n "${secret}" ]; then
                   secret_arg=(-s "secret=${secret}")
                 fi
+                # Who owns the identity, shown in the admin console.
+                if [ -n "${CLIENT_DESC[$cid]:-}" ]; then
+                  secret_arg+=(-s "description=${CLIENT_DESC[$cid]}")
+                fi
                 existing=$("$KCADM" get clients -r "${REALM}" -q clientId="${cid}" \
                   --fields id --format csv --noquotes 2>/dev/null | tail -n1 | tr -d '\r')
                 if [ -z "${existing}" ]; then
@@ -132,13 +136,25 @@ spec:
               }
 
               ensure_realm_role() {
-                local role="$1"
+                local role="$1" description="${2:-}"
                 if "$KCADM" get "roles/${role}" -r "${REALM}" >/dev/null 2>&1; then
-                  echo "Realm role '${role}' already exists."
+                  echo "Reconciling realm role '${role}'."
+                  "$KCADM" update "roles/${role}" -r "${REALM}" -s "description=${description}"
                 else
                   echo "Creating realm role '${role}'."
-                  "$KCADM" create roles -r "${REALM}" -s name="${role}"
+                  "$KCADM" create roles -r "${REALM}" -s name="${role}" -s "description=${description}"
                 fi
+              }
+
+              # Print the id of the row whose second column equals $1, from
+              # "id,name" CSV on stdin (the Keycloak image has no awk).
+              lookup() {
+                local id name
+                while IFS=, read -r id name; do
+                  name="${name%$'\r'}"
+                  if [ "${name}" = "$1" ]; then echo "${id}"; return 0; fi
+                done
+                return 0
               }
 
               # The RBAC baseline identities, plus every client in
@@ -146,8 +162,15 @@ spec:
               # created in Keycloak, not only given a stored secret).
               CREDS_DIR=/etc/dnavio-component-credentials
               CLIENTS="svc-dml svc-frs svc-dynamo svc-admin"
+              declare -A CLIENT_DESC=(
+                [svc-dynamo]="DYNAMO (MAG)"
+                [svc-admin]="Platform administration (NTUA)"
+              )
               {{- range .Values.keycloak.componentClients }}
               case " ${CLIENTS} " in *" {{ .clientId }} "*) ;; *) CLIENTS="${CLIENTS} {{ .clientId }}" ;; esac
+              {{- if .description }}
+              CLIENT_DESC[{{ .clientId }}]={{ .description | quote }}
+              {{- end }}
               {{- end }}
               for c in ${CLIENTS}; do
                 if [ -f "${CREDS_DIR}/${c}-client-secret" ]; then
@@ -156,9 +179,11 @@ spec:
                   ensure_service_client "$c"
                 fi
               done
-              for r in operator analyst integrator admin; do
-                ensure_realm_role "$r"
-              done
+
+              # Roles for people (FR-AUTH-02), from keycloak.realmRoles.
+              {{- range .Values.keycloak.realmRoles }}
+              ensure_realm_role {{ .name | quote }} {{ .description | default "" | quote }}
+              {{- end }}
 
               # svc-admin is the platform-administration machine identity: it
               # holds the 'admin' realm role (so its tokens carry it in
@@ -168,6 +193,66 @@ spec:
               "$KCADM" add-roles -r "${REALM}" \
                 --uusername "service-account-svc-admin" \
                 --rolename admin
+
+              # --- Organisations (keycloak.organizations) ---
+              # One per partner or pilot company. People are added to them by
+              # invitation from the admin console, never from this repository.
+              # Each organisation carries the vessels its members may see
+              # ("*" = all) and its type; with the 'organization' client scope
+              # these reach the token, for user interfaces to enforce.
+              ensure_organization() {
+                local alias="$1" body id
+                body="$(cat)"
+                id=$("$KCADM" get organizations -r "${REALM}" -q max=1000 \
+                      --fields id,alias --format csv --noquotes 2>/dev/null | lookup "${alias}")
+                if [ -z "${id}" ]; then
+                  echo "Creating organisation '${alias}'."
+                  printf '%s' "${body}" | "$KCADM" create organizations -r "${REALM}" -f -
+                else
+                  echo "Reconciling organisation '${alias}' (${id})."
+                  printf '%s' "${body}" | "$KCADM" update "organizations/${id}" -r "${REALM}" -f -
+                fi
+              }
+
+              setup_organizations() {
+                "$KCADM" update "realms/${REALM}" -s organizationsEnabled=true || return 1
+                {{- range .Values.keycloak.organizations }}
+                {{- $domains := list }}
+                {{- /* Keycloak requires a domain; without a real one, use a
+                       reserved name that no email address can match. */}}
+                {{- range (.domains | default (list (printf "%s.d-navio.invalid" .alias))) }}
+                {{- $domains = append $domains (dict "name" . "verified" false) }}
+                {{- end }}
+                {{- $attrs := dict "type" (list (.type | default "partner")) "vessels" (.vessels | default (list)) }}
+                {{- $org := dict "name" .name "alias" .alias "enabled" true "description" (.description | default "") "domains" $domains "attributes" $attrs }}
+                ensure_organization {{ .alias | quote }} <<'JSON' || return 1
+              {{ $org | toJson }}
+              JSON
+                {{- end }}
+
+                # Put the organisation's id and attributes (vessels, type) into
+                # tokens that carry the 'organization' scope.
+                local scope mapper
+                scope=$("$KCADM" get client-scopes -r "${REALM}" --fields id,name \
+                          --format csv --noquotes 2>/dev/null | lookup organization)
+                [ -n "${scope}" ] || { echo "client scope 'organization' not found"; return 1; }
+                mapper=$("$KCADM" get "client-scopes/${scope}/protocol-mappers/models" -r "${REALM}" \
+                          --fields id,name --format csv --noquotes 2>/dev/null | lookup organization)
+                [ -n "${mapper}" ] || { echo "mapper 'organization' not found"; return 1; }
+                "$KCADM" update "client-scopes/${scope}/protocol-mappers/models/${mapper}" -r "${REALM}" \
+                  -s 'config."addOrganizationAttributes"=true' \
+                  -s 'config."addOrganizationId"=true' || return 1
+              }
+
+              {{- if .Values.keycloak.organizations }}
+              # A failure here is reported but does not fail the deployment:
+              # components and Kafka do not depend on organisations.
+              if setup_organizations; then
+                echo "Organisations reconciled."
+              else
+                echo "WARNING: organisation setup did not complete — see the messages above."
+              fi
+              {{- end }}
 
               echo "Keycloak realm bootstrap complete."
           {{- if .Values.keycloak.componentClients }}
