@@ -104,7 +104,6 @@ jobs:
       - uses: actions/checkout@v4
       - name: Check script permissions
         run: |
-          test -x scripts/check-services.sh
           test -x scripts/kafka/create-topics.sh
           test -x scripts/kafka/list-topics.sh
           test -x scripts/kafka/produce-test-message.sh
