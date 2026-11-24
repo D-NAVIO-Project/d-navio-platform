@@ -110,6 +110,7 @@ jobs:
           test -x scripts/kafka/produce-test-message.sh
           test -x scripts/kafka/consume-topic.sh
           test -x scripts/tests/t42-integration-smoke.sh
+          test -x scripts/operations/cluster-overview.sh
 
   check-docs:
     name: Documentation presence
@@ -128,3 +129,4 @@ jobs:
           test -f docs/operations/kafka-auth.md
           test -f docs/operations/rbac-access-model.md
           test -f docs/operations/t42-integration.md
+          test -f docs/operations/cluster-overview.md

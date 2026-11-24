@@ -21,6 +21,10 @@ This guide covers:
 This guide does not define final production monitoring, alerting, or
 partner-specific operational procedures.
 
+> For the state of the Kubernetes platform (both namespaces, pods, restarts,
+> Helm releases, Kafka and telemetry flow), use
+> [`scripts/operations/cluster-overview.sh`](cluster-overview.md) instead.
+
 ## Script Location
 
 The health check script is located at:
