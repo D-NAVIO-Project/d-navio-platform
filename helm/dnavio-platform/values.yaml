@@ -86,6 +86,25 @@ kafka:
       writers:
         - svc-admin
 
+# Gateway (nginx): the platform's entry point for HTTPS traffic from outside the
+# cluster, in its own pod (templates/gateway). Today it fronts Keycloak only;
+# routes to components are added here as they need access from outside. Kafka
+# has its own external port. In-cluster clients (keycloak:8080, kafka:9092) do
+# not pass through it.
+gateway:
+  image:
+    repository: nginxinc/nginx-unprivileged
+    tag: "1.27-alpine"
+  # Node port of the entry point. keycloak.hostname must use the same port.
+  httpsNodePort: 30443
+  keycloak:
+    # The platform realm's endpoints are open to everyone; the admin console
+    # and the master realm only to these source ranges (the NTUA VPN). An empty
+    # list closes the admin console from outside altogether.
+    adminAllowedCIDRs:
+      - 147.102.6.0/24        # NTUA range
+      - 147.102.224.140/32    # single admin address
+
 keycloak:
   image:
     repository: quay.io/keycloak/keycloak
@@ -100,23 +119,9 @@ keycloak:
   # Kafka validates tokens against "<hostname>/realms/<realm>" — the SAME value,
   # so issuer + expected-issuer never drift. Must be reachable by external
   # partners; HTTPS so partner credentials are not sent in cleartext.
+  # Reached from outside through the gateway, so its port is
+  # gateway.httpsNodePort; keep the two in step.
   hostname: "https://147.102.6.143:30443"
-  service:
-    # HTTPS port for access from outside the cluster (partner token retrieval,
-    # the admin console). There is no plain-HTTP port outside the cluster.
-    httpsNodePort: 30443
-  # Gateway (nginx) in front of Keycloak for traffic from outside the cluster.
-  # The platform realm's endpoints are open to everyone; the admin console and
-  # the master realm only to the source ranges below (the NTUA VPN). An empty
-  # list closes the admin console from outside altogether. In-cluster clients
-  # (keycloak:8080) do not pass through the gateway.
-  gateway:
-    image:
-      repository: nginxinc/nginx-unprivileged
-      tag: "1.27-alpine"
-    adminAllowedCIDRs:
-      - 147.102.6.0/24        # NTUA range
-      - 147.102.224.140/32    # single admin address
   # Persist the H2 database so the realm + clients survive pod restarts.
   storage:
     size: 1Gi

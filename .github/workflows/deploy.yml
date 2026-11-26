@@ -49,15 +49,15 @@ jobs:
             helm rollback "$RELEASE" -n "$NS" || true
           fi
 
-      # One-time migration: Keycloak's node port moves from Service keycloak to
-      # Service keycloak-external. Helm creates the new Service first, which
-      # fails while the old one still holds the port, so release it here.
-      - name: Release Keycloak's node port for keycloak-external
+      # One-time migration: the HTTPS node port moves from Service
+      # keycloak-external (gateway inside the Keycloak pod) to Service gateway
+      # (its own pod). Helm creates the new Service before removing the old
+      # one, which fails while the old one still holds the port, so remove it
+      # here. Outside access to Keycloak pauses until the gateway is ready.
+      - name: Release the node port for the gateway
         run: |
           NS=dnavio-dev
-          if [ "$(kubectl get svc keycloak -n "$NS" -o jsonpath='{.spec.type}' 2>/dev/null)" = "NodePort" ]; then
-            kubectl patch svc keycloak -n "$NS" -p '{"spec":{"type":"ClusterIP"}}'
-          fi
+          kubectl delete svc keycloak-external -n "$NS" --ignore-not-found
 
       - name: Deploy to dnavio-dev
         env:
@@ -81,6 +81,7 @@ jobs:
             -f "$tmp" \
             --timeout 15m
           kubectl rollout status deployment/keycloak -n dnavio-dev --timeout=5m
+          kubectl rollout status deployment/gateway -n dnavio-dev --timeout=3m
           kubectl rollout status deployment/kafka -n dnavio-dev --timeout=10m
 
   deploy-pilot:
@@ -121,12 +122,10 @@ jobs:
             helm rollback "$RELEASE" -n "$NS" || true
           fi
 
-      - name: Release Keycloak's node port for keycloak-external
+      - name: Release the node port for the gateway
         run: |
           NS=dnavio-pilot
-          if [ "$(kubectl get svc keycloak -n "$NS" -o jsonpath='{.spec.type}' 2>/dev/null)" = "NodePort" ]; then
-            kubectl patch svc keycloak -n "$NS" -p '{"spec":{"type":"ClusterIP"}}'
-          fi
+          kubectl delete svc keycloak-external -n "$NS" --ignore-not-found
 
       - name: Deploy to dnavio-pilot
         env:
@@ -150,4 +149,5 @@ jobs:
             -f "$tmp" \
             --timeout 15m
           kubectl rollout status deployment/keycloak -n dnavio-pilot --timeout=5m
+          kubectl rollout status deployment/gateway -n dnavio-pilot --timeout=3m
           kubectl rollout status deployment/kafka -n dnavio-pilot --timeout=10m

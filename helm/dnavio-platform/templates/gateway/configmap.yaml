@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway
+  labels:
+    {{- include "dnavio-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+data:
+  # nginx: the platform's entry point for HTTPS traffic from outside the
+  # cluster (Kafka has its own external port and does not pass through here).
+  # Today it fronts Keycloak only:
+  #   Anyone:               the platform realm (tokens, login pages) and the
+  #                         static files those pages load.
+  #   Allowed ranges only:  everything else — the admin console, the master
+  #                         realm, any other realm.
+  # A route to a component that may be absent must resolve its address at
+  # request time (resolver + variable in proxy_pass): with a fixed hostname,
+  # nginx refuses to start when the name does not resolve. Keycloak is part of
+  # this release, so its Service always exists.
+  default.conf: |
+    server {
+      listen 9443 ssl;
+      server_tokens off;
+
+      ssl_certificate     /etc/dnavio-tls/tls.crt;
+      ssl_certificate_key /etc/dnavio-tls/tls.key;
+
+      # Keycloak serves HTTPS with the same certificate, issued for the node's
+      # address rather than the Service name, so it is not verified here.
+      proxy_ssl_verify off;
+      proxy_set_header Host $http_host;
+      proxy_buffer_size 16k;
+      proxy_buffers 8 16k;
+
+      location /realms/{{ .Values.keycloak.realm }}/ {
+        proxy_pass https://keycloak.{{ .Release.Namespace }}.svc.cluster.local:8443;
+      }
+      location /resources/ {
+        proxy_pass https://keycloak.{{ .Release.Namespace }}.svc.cluster.local:8443;
+      }
+      location / {
+        {{- range .Values.gateway.keycloak.adminAllowedCIDRs }}
+        allow {{ . }};
+        {{- end }}
+        deny all;
+        proxy_pass https://keycloak.{{ .Release.Namespace }}.svc.cluster.local:8443;
+      }
+    }
