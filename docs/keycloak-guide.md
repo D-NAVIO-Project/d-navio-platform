@@ -33,9 +33,9 @@ value, so issuer and expected-issuer can never drift.
 
 ## TLS
 
-From outside the cluster, Keycloak is reachable only over **HTTPS** (NodePort
-`30443`, Service `keycloak-external`), so all external/partner traffic — where
-client secrets are POSTed — is encrypted. There is no plain-HTTP port outside
+From outside the cluster, Keycloak is reachable only over **HTTPS**, through the
+platform gateway (NodePort `30443`, Service `gateway`), so all external/partner
+traffic — where client secrets are POSTed — is encrypted. There is no plain-HTTP port outside
 the cluster. Inside the cluster, Keycloak serves HTTP on `keycloak:8080`.
 
 The server certificate comes from the `dnavio-tls` Kubernetes Secret, generated
@@ -70,11 +70,14 @@ hardening step.)
 ## Admin Console
 
 The admin console and the `master` realm are reachable only from the source
-ranges in `keycloak.gateway.adminAllowedCIDRs` (the NTUA VPN). A gateway
-container (nginx) in the Keycloak pod enforces this for all traffic from
-outside the cluster; from any other address these pages answer `403`. The
-platform realm's endpoints (tokens, login pages) stay open to everyone. To
-change who may reach the console, edit the list and redeploy the platform.
+ranges in `gateway.keycloak.adminAllowedCIDRs` (the NTUA VPN). The platform
+gateway (nginx, its own pod: Deployment, Service and ConfigMap `gateway`)
+enforces this for all traffic from outside the cluster; from any other address
+these pages answer `403`. The platform realm's endpoints (tokens, login pages)
+stay open to everyone. To change who may reach the console, edit the list and
+redeploy the platform: only the gateway restarts, not Keycloak.
+
+To see who was let in or refused: `kubectl logs -n dnavio-dev deploy/gateway --tail=50`.
 
 Locked out? The admin CLI still works from the VM, inside the pod:
 `kubectl exec -n dnavio-dev deploy/keycloak -c keycloak -- /opt/keycloak/bin/kcadm.sh ...`.

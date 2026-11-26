@@ -1,9 +1,10 @@
 # Pilot / demo environment overrides.
 # Distinct NodePorts from dev — both environments share the same VM node.
+gateway:
+  httpsNodePort: 32443
+
 keycloak:
   hostname: "https://147.102.6.143:32443"
-  service:
-    httpsNodePort: 32443
 
 kafka:
   external:

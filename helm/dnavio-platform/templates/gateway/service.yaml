@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  labels:
+    {{- include "dnavio-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  # The platform's HTTPS entry point from outside the cluster. There is no
+  # plain-HTTP port outside the cluster.
+  type: NodePort
+  # Keep the caller's source address, so the gateway can tell who is asking.
+  externalTrafficPolicy: Local
+  ports:
+    - name: https
+      port: 443
+      targetPort: https
+      protocol: TCP
+      nodePort: {{ .Values.gateway.httpsNodePort }}
+  selector:
+    {{- include "dnavio-platform.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
